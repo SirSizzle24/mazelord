@@ -7,6 +7,7 @@ const TAP_SLACK := 10.0  # extra pixels around a unit that still count as tappin
 
 @export var grid: Node2D
 @export var dig_controller: Node2D
+@export var build_controller: Node2D
 
 var selected: Node2D = null  # the selected unit, or null for none
 var press_position := Vector2.ZERO
@@ -15,7 +16,7 @@ var tap_possible := false  # false once a touch turns into a pan or a pinch
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if dig_controller.dig_mode:
+	if dig_controller.dig_mode or build_controller.build_mode:
 		return
 	if not (event is InputEventScreenTouch):
 		return

@@ -8,6 +8,21 @@ const TROOP_TYPES := {
 	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true},
 	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false},
 }
+## Every furnishing that can be built. Size is in tiles along the grid; costs are placeholders to tune.
+const FURNISHINGS := {
+	"soil_bed": {"name": "Damp soil bed", "size": Vector2i(1, 2), "cost": 10, "color": Color(0.36, 0.26, 0.18)},
+	"mister": {"name": "Mister", "size": Vector2i(1, 1), "cost": 15, "color": Color(0.55, 0.75, 0.85)},
+	"crop_bed": {"name": "Crop bed", "size": Vector2i(2, 2), "cost": 15, "color": Color(0.40, 0.60, 0.30)},
+	"harvest_bin": {"name": "Harvest bin", "size": Vector2i(1, 1), "cost": 10, "color": Color(0.75, 0.60, 0.30)},
+	"shelves": {"name": "Shelves", "size": Vector2i(1, 2), "cost": 10, "color": Color(0.55, 0.45, 0.35)},
+	"crates": {"name": "Crates", "size": Vector2i(1, 1), "cost": 5, "color": Color(0.65, 0.50, 0.30)},
+	"resource_vat": {"name": "Resource vat", "size": Vector2i(2, 2), "cost": 20, "color": Color(0.45, 0.35, 0.60)},
+	"tables": {"name": "Tables and seats", "size": Vector2i(2, 2), "cost": 15, "color": Color(0.70, 0.45, 0.30)},
+	"decorations": {"name": "Decorations", "size": Vector2i(1, 1), "cost": 10, "color": Color(0.85, 0.40, 0.60)},
+	"rot_pit": {"name": "Rot pit", "size": Vector2i(2, 2), "cost": 20, "color": Color(0.30, 0.35, 0.20)},
+	"door": {"name": "Door", "size": Vector2i(1, 1), "cost": 5, "color": Color(0.50, 0.30, 0.15)},
+}
+
 const SUMMON_TILE := Vector2i(10, 10)  # the summoning spot in the starting room
 
 @export var grid: Node2D
@@ -15,6 +30,14 @@ const SUMMON_TILE := Vector2i(10, 10)  # the summoning spot in the starting room
 @export var units_parent: Node2D      # where new units are placed in the scene tree
 
 var mana := 100
+
+
+## Spends mana if there's enough. Returns false, spending nothing, if there isn't.
+func try_spend(amount: int) -> bool:
+	if mana < amount:
+		return false
+	add_mana(-amount)
+	return true
 
 
 func add_mana(amount: int) -> void:

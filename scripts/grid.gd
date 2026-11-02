@@ -20,6 +20,8 @@ const NEIGHBORS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0,
 
 var tiles: Array = []  # tiles[x][y] holds a Tile value
 var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile -> true)
+var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "built"}
+var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 
@@ -91,6 +93,32 @@ func nearest_diggable(from: Vector2) -> Vector2i:
 	return best
 
 
+## Every tile a furnishing covers, counting from its origin tile along the grid.
+func footprint(origin: Vector2i, size: Vector2i) -> Array[Vector2i]:
+	var tiles_covered: Array[Vector2i] = []
+	for dx in size.x:
+		for dy in size.y:
+			tiles_covered.append(origin + Vector2i(dx, dy))
+	return tiles_covered
+
+
+## True if every tile under the footprint is open floor with nothing on it.
+func can_place(origin: Vector2i, size: Vector2i) -> bool:
+	for tile in footprint(origin, size):
+		if not is_floor(tile) or occupied.has(tile):
+			return false
+	return true
+
+
+## Adds an unbuilt furnishing (a see-through ghost) for a worker to build later.
+func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color) -> void:
+	var furnishing := {"id": id, "origin": origin, "size": size, "color": color, "built": false}
+	furnishings.append(furnishing)
+	for tile in footprint(origin, size):
+		occupied[tile] = furnishing
+	queue_redraw()
+
+
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.
 func dig(tile: Vector2i) -> void:
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
@@ -133,6 +161,14 @@ func _draw() -> void:
 			var outline := diamond.duplicate()
 			outline.append(diamond[0])  # back to the first corner to close the shape
 			draw_polyline(outline, LINE_COLOR, 1.0)
+
+	# Furnishings on top of the floor: see-through until built, solid once built.
+	for furnishing in furnishings:
+		var color: Color = furnishing["color"]
+		if not furnishing["built"]:
+			color.a = 0.35
+		for tile in footprint(furnishing["origin"], furnishing["size"]):
+			draw_colored_polygon(_diamond(tile), color)
 
 
 ## The four corners of a tile's diamond: top, right, bottom, left.
