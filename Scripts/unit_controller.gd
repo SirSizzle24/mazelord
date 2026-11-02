@@ -35,7 +35,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 	var tapped: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
 
-	if tapped == unit.tile:
+	if tapped == unit.get_tile():
 		unit.set_selected(not unit.selected)  # tap the unit again to deselect
 	elif unit.selected:
 		unit.move_to(tapped)  # does nothing if there's no path
