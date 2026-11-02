@@ -1,5 +1,5 @@
 extends Node2D
-## A grey circle that walks freely along a navigation path, and can be set to dig marked rock.
+## A troop: a colored circle that walks freely along a navigation path. Workers can dig marked rock.
 
 const SPEED := 200.0  # pixels per second
 const RADIUS := 20.0
@@ -7,6 +7,10 @@ const DIG_TIME := 1.5  # seconds to dig one tile
 
 @export var grid: Node2D
 @export var start_tile := Vector2i(10, 10)
+
+var type_id := ""  # which troop type this is, e.g. "worker"
+var color := Color(0.6, 0.6, 0.6)
+var can_dig := false
 
 var path: PackedVector2Array = []  # points still to walk to, in straight lines
 var selected := false
@@ -16,7 +20,15 @@ var dig_target: Vector2i = Vector2i(-1, -1)  # the tile being dug, or NO_TILE
 var dig_progress := 0.0  # seconds spent on the current tile
 
 
+## Called by the dungeon before the unit enters the scene.
+func setup(new_type_id: String, troop_type: Dictionary) -> void:
+	type_id = new_type_id
+	color = troop_type["color"]
+	can_dig = troop_type["can_dig"]
+
+
 func _ready() -> void:
+	add_to_group("units")  # lets the controller find every unit
 	grid.dig(start_tile)  # make sure it starts on floor
 	position = grid.tile_to_screen(start_tile)
 
@@ -27,7 +39,7 @@ func get_tile() -> Vector2i:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, RADIUS, Color(0.6, 0.6, 0.6))
+	draw_circle(Vector2.ZERO, RADIUS, color)
 	if selected:
 		draw_arc(Vector2.ZERO, RADIUS + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
 	if dig_progress > 0.0:
@@ -50,6 +62,8 @@ func move_to(target_tile: Vector2i) -> void:
 
 ## Assigns this unit to dig, starting with the given marked tile if it can be reached.
 func start_digging(first_tile: Vector2i) -> void:
+	if not can_dig:
+		return  # only workers dig
 	is_digger = true
 	if not grid.has_floor_neighbor(first_tile):
 		first_tile = grid.nearest_diggable(position)  # can't reach that one yet; take the nearest

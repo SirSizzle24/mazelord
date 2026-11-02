@@ -1,24 +1,27 @@
 [gd_scene format=3 uid="uid://cc2euw8q8xryd"]
 
-[ext_resource type="Script" uid="uid://c1i7cq0yivgvr" path="res://Scripts/grid.gd" id="1_jjgbg"]
-[ext_resource type="Script" uid="uid://d3foeinh1p6f5" path="res://Scripts/dig_controller.gd" id="2_8gbba"]
-[ext_resource type="Script" uid="uid://d1dhoaoe0ya0c" path="res://Scripts/camera.gd" id="2_bo1nx"]
-[ext_resource type="Script" path="res://Scripts/unit.gd" id="3_unit"]
-[ext_resource type="Script" path="res://Scripts/unit_controller.gd" id="4_unitctrl"]
+[ext_resource type="Script" uid="uid://c1i7cq0yivgvr" path="res://scripts/grid.gd" id="1_jjgbg"]
+[ext_resource type="Script" uid="uid://d3foeinh1p6f5" path="res://scripts/dig_controller.gd" id="2_8gbba"]
+[ext_resource type="Script" uid="uid://d1dhoaoe0ya0c" path="res://scripts/camera.gd" id="2_bo1nx"]
+[ext_resource type="Script" path="res://scripts/unit_controller.gd" id="4_unitctrl"]
+[ext_resource type="Script" path="res://scripts/dungeon.gd" id="5_dungeon"]
+[ext_resource type="PackedScene" path="res://Scenes/unit.tscn" id="6_unitscene"]
+[ext_resource type="Script" path="res://scripts/hud.gd" id="7_hud"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
 [node name="Grid" type="Node2D" parent="." unique_id=1823644226]
 script = ExtResource("1_jjgbg")
 
-[node name="Unit" type="Node2D" parent="." node_paths=PackedStringArray("grid")]
-script = ExtResource("3_unit")
+[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent")]
+script = ExtResource("5_dungeon")
 grid = NodePath("../Grid")
+unit_scene = ExtResource("6_unitscene")
+units_parent = NodePath("..")
 
-[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "unit", "dig_controller")]
+[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller")]
 script = ExtResource("4_unitctrl")
 grid = NodePath("../Grid")
-unit = NodePath("../Unit")
 dig_controller = NodePath("../DigController")
 
 [node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button")]
@@ -31,7 +34,9 @@ dig_button = NodePath("../UI/DigButton")
 script = ExtResource("2_bo1nx")
 grid = NodePath("../Grid")
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=100359164]
+[node name="UI" type="CanvasLayer" parent="." unique_id=100359164 node_paths=PackedStringArray("dungeon")]
+script = ExtResource("7_hud")
+dungeon = NodePath("../Dungeon")
 
 [node name="DigButton" type="Button" parent="UI" unique_id=996881546]
 offset_left = 40.0
@@ -40,3 +45,31 @@ offset_right = 123.0
 offset_bottom = 66.0
 toggle_mode = true
 text = "Dig"
+
+[node name="ManaLabel" type="Label" parent="UI"]
+offset_left = 140.0
+offset_top = 32.0
+offset_right = 300.0
+offset_bottom = 58.0
+text = "Mana: 100"
+
+[node name="SummonWorkerButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 80.0
+offset_right = 260.0
+offset_bottom = 120.0
+text = "Summon Worker (30)"
+
+[node name="SummonRoundheadButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 130.0
+offset_right = 260.0
+offset_bottom = 170.0
+text = "Summon Roundhead (20)"
+
+[node name="DebugManaButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 180.0
+offset_right = 260.0
+offset_bottom = 220.0
+text = "Debug: +100 mana"
