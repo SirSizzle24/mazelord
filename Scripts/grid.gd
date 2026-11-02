@@ -13,6 +13,7 @@ const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
 
 var tiles: Array = []  # tiles[x][y] holds a Tile value
+var astar := AStarGrid2D.new()  # finds paths through floor tiles
 
 
 func _ready() -> void:
@@ -21,6 +22,14 @@ func _ready() -> void:
 		for y in GRID_HEIGHT:
 			column.append(Tile.ROCK)
 		tiles.append(column)
+
+	astar.region = Rect2i(0, 0, GRID_WIDTH, GRID_HEIGHT)
+	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER  # move in 4 directions only, for now
+	astar.update()
+	for x in GRID_WIDTH:
+		for y in GRID_HEIGHT:
+			astar.set_point_solid(Vector2i(x, y), true)  # everything starts as rock
+
 
 ## True if the tile is inside the grid.
 func is_in_bounds(tile: Vector2i) -> bool:
@@ -31,7 +40,16 @@ func is_in_bounds(tile: Vector2i) -> bool:
 func dig(tile: Vector2i) -> void:
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
 		tiles[tile.x][tile.y] = Tile.FLOOR
+		astar.set_point_solid(tile, false)  # floor is walkable now
 		queue_redraw()  # the data changed, so the picture must update
+
+
+## The list of tiles from one tile to another, or an empty list if there's no way through.
+func find_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var no_path: Array[Vector2i] = []
+	if not is_in_bounds(to):
+		return no_path
+	return astar.get_id_path(from, to)
 
 func _draw() -> void:
 	for x in GRID_WIDTH:
