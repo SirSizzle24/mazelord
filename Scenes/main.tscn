@@ -1,3 +1,30 @@
 [gd_scene format=3 uid="uid://cc2euw8q8xryd"]
 
-[node name="Node2D" type="Node2D" unique_id=1161609498]
+[ext_resource type="Script" uid="uid://c1i7cq0yivgvr" path="res://scripts/grid.gd" id="1_jjgbg"]
+[ext_resource type="Script" uid="uid://d3foeinh1p6f5" path="res://scripts/dig_controller.gd" id="2_8gbba"]
+[ext_resource type="Script" uid="uid://d1dhoaoe0ya0c" path="res://scripts/camera.gd" id="2_bo1nx"]
+
+[node name="Main" type="Node2D" unique_id=1161609498]
+
+[node name="Grid" type="Node2D" parent="." unique_id=1823644226]
+script = ExtResource("1_jjgbg")
+
+[node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button")]
+script = ExtResource("2_8gbba")
+grid = NodePath("../Grid")
+camera = NodePath("../Camera")
+dig_button = NodePath("../UI/DigButton")
+
+[node name="Camera" type="Camera2D" parent="." unique_id=493433707 node_paths=PackedStringArray("grid")]
+script = ExtResource("2_bo1nx")
+grid = NodePath("../Grid")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=100359164]
+
+[node name="DigButton" type="Button" parent="UI" unique_id=996881546]
+offset_left = 40.0
+offset_top = 23.0
+offset_right = 123.0
+offset_bottom = 66.0
+toggle_mode = true
+text = "Dig"
