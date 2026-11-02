@@ -1,5 +1,5 @@
 extends Node2D
-## In dig mode, touching or dragging over rock turns it into floor.
+## In dig mode, touching or dragging over rock marks it for a worker to dig.
 
 @export var grid: Node2D
 @export var camera: Camera2D
@@ -29,4 +29,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Touch positions are in screen pixels; convert to world, then to the grid's own space.
 		var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 		var tile: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
-		grid.dig(tile)
+		grid.mark(tile)

@@ -1,5 +1,6 @@
 extends Node2D
-## Outside dig mode: tap the unit to select it, then tap a tile to send it there.
+## Outside dig mode: tap the unit to select it, then tap a tile to send it there,
+## or tap a marked tile to set it digging.
 
 const TAP_DISTANCE := 10.0  # a touch that moves less than this many pixels is a tap, not a pan
 
@@ -37,5 +38,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if tapped == unit.get_tile():
 		unit.set_selected(not unit.selected)  # tap the unit again to deselect
+	elif unit.selected and grid.is_marked(tapped):
+		unit.start_digging(tapped)  # dig this tile, then keep taking the nearest marked one
 	elif unit.selected:
 		unit.move_to(tapped)  # does nothing if there's no path

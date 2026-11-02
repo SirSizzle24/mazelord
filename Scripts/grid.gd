@@ -13,8 +13,13 @@ enum Tile { ROCK, FLOOR }
 const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
+const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
+
+const NO_TILE := Vector2i(-1, -1)  # stands for "no tile" when a search finds nothing
+const NEIGHBORS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 var tiles: Array = []  # tiles[x][y] holds a Tile value
+var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile -> true)
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 
@@ -28,10 +33,18 @@ func _ready() -> void:
 
 	add_child(nav_region)
 
+	# A small pre-dug starting room, as the onboarding design calls for.
+	for x in range(9, 12):
+		for y in range(9, 12):
+			dig(Vector2i(x, y))
+
 
 func _process(_delta: float) -> void:
 	# Rebuild at most once per frame, so dragging across many tiles costs one rebuild.
-	if nav_dirty:
+	# Wait until the navigation server has synced its map at least once (iteration 0 means
+	# not yet); a mesh handed over before then is lost, which broke the starting room.
+	var map_ready := NavigationServer2D.map_get_iteration_id(get_world_2d().navigation_map) > 0
+	if nav_dirty and map_ready:
 		nav_dirty = false
 		rebuild_navigation()
 
@@ -46,10 +59,43 @@ func is_floor(tile: Vector2i) -> bool:
 	return is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.FLOOR
 
 
+## Marks a rock tile to be dug by a worker.
+func mark(tile: Vector2i) -> void:
+	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK and not marked.has(tile):
+		marked[tile] = true
+		queue_redraw()
+
+
+func is_marked(tile: Vector2i) -> bool:
+	return marked.has(tile)
+
+
+## True if the tile shares a side with a floor tile, so a worker can reach it to dig.
+func has_floor_neighbor(tile: Vector2i) -> bool:
+	for offset in NEIGHBORS:
+		if is_floor(tile + offset):
+			return true
+	return false
+
+
+## The closest marked tile a worker could start digging now, or NO_TILE if there isn't one.
+func nearest_diggable(from: Vector2) -> Vector2i:
+	var best := NO_TILE
+	var best_distance := INF
+	for tile in marked:
+		if has_floor_neighbor(tile):
+			var distance := from.distance_to(tile_to_screen(tile))
+			if distance < best_distance:
+				best = tile
+				best_distance = distance
+	return best
+
+
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.
 func dig(tile: Vector2i) -> void:
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
 		tiles[tile.x][tile.y] = Tile.FLOOR
+		marked.erase(tile)  # dug tiles are no longer waiting
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
 
@@ -77,7 +123,11 @@ func _draw() -> void:
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
 			var diamond := _diamond(Vector2i(x, y))
-			var color: Color = ROCK_COLOR if tiles[x][y] == Tile.ROCK else FLOOR_COLOR
+			var color: Color = FLOOR_COLOR
+			if marked.has(Vector2i(x, y)):
+				color = MARKED_COLOR
+			elif tiles[x][y] == Tile.ROCK:
+				color = ROCK_COLOR
 			draw_colored_polygon(diamond, color)
 
 			var outline := diamond.duplicate()
