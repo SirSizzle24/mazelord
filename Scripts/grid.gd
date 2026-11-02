@@ -24,7 +24,9 @@ func _ready() -> void:
 		tiles.append(column)
 
 	astar.region = Rect2i(0, 0, GRID_WIDTH, GRID_HEIGHT)
-	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER  # move in 4 directions only, for now
+	# Diagonal steps are allowed if at least one of the two tiles beside the step is open,
+	# so units can pass one rock corner but never squeeze between two.
+	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
 	astar.update()
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:

@@ -17,12 +17,6 @@ func _ready() -> void:
 	grid.dig(tile)  # make sure it starts on floor
 	position = grid.tile_to_screen(tile)
 
-	# Temporary test: dig a short L-shaped corridor and walk to its end.
-	for i in range(1, 5):
-		grid.dig(Vector2i(10 + i, 10))
-		grid.dig(Vector2i(14, 10 + i))
-	move_to(Vector2i(14, 14))
-
 
 func _draw() -> void:
 	draw_circle(Vector2.ZERO, RADIUS, Color(0.6, 0.6, 0.6))
