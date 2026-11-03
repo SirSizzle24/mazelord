@@ -35,13 +35,16 @@ grid = NodePath("../Grid")
 dig_controller = NodePath("../DigController")
 build_controller = NodePath("../BuildController")
 
-[node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar")]
+[node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar", "remove_button", "rotate_button", "place_button")]
 script = ExtResource("8_build")
 grid = NodePath("../Grid")
 dungeon = NodePath("../Dungeon")
 build_button = NodePath("../UI/BuildButton")
 dig_button = NodePath("../UI/DigButton")
 item_bar = NodePath("../UI/ItemBar")
+remove_button = NodePath("../UI/RemoveButton")
+rotate_button = NodePath("../UI/RotateButton")
+place_button = NodePath("../UI/PlaceButton")
 
 [node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button")]
 script = ExtResource("2_8gbba")
@@ -143,3 +146,25 @@ offset_top = 60.0
 offset_right = 1000.0
 offset_bottom = 86.0
 text = "Morale: 50"
+
+[node name="RotateButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 290.0
+offset_right = 123.0
+offset_bottom = 333.0
+text = "Rotate"
+
+[node name="RemoveButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 390.0
+offset_right = 123.0
+offset_bottom = 433.0
+toggle_mode = true
+text = "Remove"
+
+[node name="PlaceButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 340.0
+offset_right = 123.0
+offset_bottom = 383.0
+text = "Place"

@@ -28,6 +28,7 @@ var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile
 var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "blocks", "progress", "solid", "built"}
 var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
+var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 var nav_version := 0  # goes up with every rebuild, so units can tell the walkable shape changed
@@ -79,6 +80,12 @@ func is_marked(tile: Vector2i) -> bool:
 	return marked.has(tile)
 
 
+## Clears a dig mark.
+func unmark(tile: Vector2i) -> void:
+	if marked.erase(tile):
+		queue_redraw()
+
+
 ## True if a finished door stands on this tile. Doors divide rooms.
 func is_door(tile: Vector2i) -> bool:
 	return occupied.has(tile) and occupied[tile]["id"] == "door" and occupied[tile]["built"]
@@ -111,9 +118,10 @@ func can_place(origin: Vector2i, size: Vector2i) -> bool:
 
 ## Adds an unbuilt furnishing (a see-through ghost) for a worker to build later.
 ## Ghosts are walkable; a blocking furnishing turns solid once it's SOLID_AT built.
-func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color, blocks: bool) -> void:
+## rotation is in quarter turns (0 to 3), kept so later art can face the right way.
+func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color, blocks: bool, rotation_steps: int = 0) -> void:
 	var furnishing := {"id": id, "origin": origin, "size": size, "color": color, "blocks": blocks,
-		"progress": 0.0, "solid": false, "built": false}
+		"rotation": rotation_steps, "progress": 0.0, "solid": false, "built": false}
 	furnishings.append(furnishing)
 	for tile in footprint(origin, size):
 		occupied[tile] = furnishing
@@ -125,6 +133,46 @@ func blueprint_at(tile: Vector2i) -> Dictionary:
 	if occupied.has(tile) and not occupied[tile]["built"]:
 		return occupied[tile]
 	return {}
+
+
+## Shows a faint preview of an item before it's placed; red if it can't go there.
+func set_preview(origin: Vector2i, size: Vector2i, color: Color, valid: bool) -> void:
+	var new_preview := {"origin": origin, "size": size, "color": color, "valid": valid}
+	if new_preview == preview:
+		return  # unchanged; skip redrawing the whole grid
+	preview = new_preview
+	queue_redraw()
+
+
+func clear_preview() -> void:
+	if not preview.is_empty():
+		preview = {}
+		queue_redraw()
+
+
+## The furnishing covering a tile, built or not, or an empty dictionary if there isn't one.
+func furnishing_at(tile: Vector2i) -> Dictionary:
+	return occupied.get(tile, {})
+
+
+## Takes a furnishing off the grid entirely, built or not.
+func remove_furnishing(furnishing: Dictionary) -> void:
+	furnishings.erase(furnishing)
+	for tile in footprint(furnishing["origin"], furnishing["size"]):
+		occupied.erase(tile)
+	if furnishing["solid"]:
+		nav_dirty = true  # its hole in the walkable shape closes up
+	if furnishing["built"]:
+		layout_changed.emit()  # rooms may change type
+	queue_redraw()
+
+
+## True if a job still exists: its rock is still marked, or its blueprint is still on the grid and unbuilt.
+## The player can remove jobs while a worker is on its way or mid-job.
+func job_still_exists(job: Dictionary) -> bool:
+	if job["kind"] == "dig":
+		return marked.has(job["tile"])
+	return furnishings.has(job["furnishing"]) and not job["furnishing"]["built"]
 
 
 ## The middle of a furnishing, in screen position.
@@ -250,6 +298,14 @@ func _draw() -> void:
 			color.a = 0.35
 		for tile in footprint(furnishing["origin"], furnishing["size"]):
 			draw_colored_polygon(_diamond(tile), color)
+
+	# The placement preview: fainter than a ghost, and red where the item can't go.
+	if not preview.is_empty():
+		var preview_color: Color = preview["color"] if preview["valid"] else Color(1.0, 0.2, 0.2)
+		preview_color.a = 0.18
+		for tile in footprint(preview["origin"], preview["size"]):
+			if is_in_bounds(tile):
+				draw_colored_polygon(_diamond(tile), preview_color)
 
 
 ## The four corners of a tile's diamond: top, right, bottom, left.

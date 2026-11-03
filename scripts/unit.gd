@@ -178,6 +178,15 @@ func _path_length(points: PackedVector2Array) -> float:
 
 
 func _process(delta: float) -> void:
+	# The player may have cancelled this job (unmarked the rock or removed the blueprint).
+	if not job.is_empty() and not grid.job_still_exists(job):
+		_release_job()
+		path = PackedVector2Array()  # stop walking to it
+		queue_redraw()
+		if is_working:
+			_take_next_job()
+		return
+
 	if not path.is_empty():
 		position = position.move_toward(path[0], SPEED * delta)
 		if position == path[0]:  # reached this point; head for the next

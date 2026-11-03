@@ -14,7 +14,7 @@ var taps := TapDetector.new()
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if dig_controller.dig_mode or build_controller.build_mode:
+	if dig_controller.dig_mode or build_controller.build_mode or build_controller.remove_mode:
 		return
 	if not taps.is_tap(event):
 		return
