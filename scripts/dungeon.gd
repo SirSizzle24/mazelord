@@ -1,7 +1,8 @@
 extends Node
-## Dungeon-wide state: the mana pool, the troop types, and summoning.
+## Dungeon-wide state: mana, food, the troop and furnishing types, and summoning.
 
 signal mana_changed(new_amount: int)
+signal food_changed(new_amount: int)
 
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
@@ -36,11 +37,53 @@ const ROOM_TYPES := {
 
 const SUMMON_TILE := Vector2i(10, 10)  # the summoning spot in the starting room
 
+const FREE_TROOPS := 2  # troops you can have before beds are needed
+const FARM_INTERVAL := 10.0  # seconds between harvests
+const FOOD_PER_CROP_BED := 1  # food each crop bed in a farm adds per harvest
+const EAT_INTERVAL := 20.0  # seconds between meals; each troop eats 1 food per meal
+
 @export var grid: Node2D
 @export var unit_scene: PackedScene   # the unit "blueprint" to copy when summoning
 @export var units_parent: Node2D      # where new units are placed in the scene tree
+@export var rooms: Node              # tells us which beds and crop beds are in working rooms
 
 var mana := 100
+var food := 20
+var farm_timer := 0.0
+# Meals start out of step with harvests, so the two never land on the same frame and hide each other
+# on the food display (troops seemed to stop eating when a harvest cancelled out a meal).
+var eat_timer := EAT_INTERVAL - FARM_INTERVAL / 2.0
+
+
+func _process(delta: float) -> void:
+	farm_timer += delta
+	if farm_timer >= FARM_INTERVAL:
+		farm_timer -= FARM_INTERVAL
+		var grown: int = rooms.count_items("farm", "crop_bed") * FOOD_PER_CROP_BED
+		if grown > 0:
+			add_food(grown)
+
+	eat_timer += delta
+	if eat_timer >= EAT_INTERVAL:
+		eat_timer -= EAT_INTERVAL
+		var eaten: int = min(food, troop_count())  # can't eat more than there is
+		if eaten > 0:
+			add_food(-eaten)
+
+
+func add_food(amount: int) -> void:
+	food += amount
+	food_changed.emit(food)
+
+
+func troop_count() -> int:
+	return get_tree().get_nodes_in_group("units").size()
+
+
+## How many troops you can have: FREE_TROOPS, or one per soil bed in quarters, whichever is higher.
+## Your first beds house the troops you already have; only beds beyond FREE_TROOPS raise the cap.
+func troop_cap() -> int:
+	return max(FREE_TROOPS, rooms.count_items("quarters", "soil_bed"))
 
 
 ## Spends mana if there's enough. Returns false, spending nothing, if there isn't.
@@ -56,8 +99,11 @@ func add_mana(amount: int) -> void:
 	mana_changed.emit(mana)  # tell anyone listening, like the mana display
 
 
-## Spends mana to create a troop at the summoning spot. Returns false if there isn't enough mana.
+## Spends mana to create a troop at the summoning spot.
+## Returns false if there isn't enough mana or no room for another troop.
 func summon(type_id: String) -> bool:
+	if troop_count() >= troop_cap():
+		return false  # needs more beds
 	var troop_type: Dictionary = TROOP_TYPES[type_id]
 	if mana < troop_type["cost"]:
 		return false

@@ -15,11 +15,12 @@
 [node name="Grid" type="Node2D" parent="." unique_id=1823644226]
 script = ExtResource("1_jjgbg")
 
-[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent")]
+[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms")]
 script = ExtResource("5_dungeon")
 grid = NodePath("../Grid")
 unit_scene = ExtResource("6_unitscene")
 units_parent = NodePath("..")
+rooms = NodePath("../Rooms")
 
 [node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
 script = ExtResource("9_rooms")
@@ -113,3 +114,25 @@ offset_top = 32.0
 offset_right = 620.0
 offset_bottom = 58.0
 text = "Room"
+
+[node name="FoodLabel" type="Label" parent="UI"]
+offset_left = 660.0
+offset_top = 32.0
+offset_right = 780.0
+offset_bottom = 58.0
+text = "Food: 20"
+
+[node name="TroopLabel" type="Label" parent="UI"]
+offset_left = 800.0
+offset_top = 32.0
+offset_right = 960.0
+offset_bottom = 58.0
+text = "Troops: 0 / 2"
+
+[node name="HungerWarning" type="Label" parent="UI"]
+offset_left = 980.0
+offset_top = 32.0
+offset_right = 1240.0
+offset_bottom = 58.0
+theme_override_colors/font_color = Color(1, 0.3, 0.3, 1)
+text = "Out of food!"

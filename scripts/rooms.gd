@@ -91,6 +91,18 @@ func _bounds(room_tiles: Dictionary) -> Rect2:
 	return box
 
 
+## How many finished furnishings of one kind stand in rooms of one type, e.g. soil beds in quarters.
+func count_items(room_type: String, item_id: String) -> int:
+	var total := 0
+	for room in rooms:
+		if room["type"] != room_type:
+			continue
+		for furnishing in grid.furnishings:
+			if furnishing["built"] and furnishing["id"] == item_id and room["tiles"].has(furnishing["origin"]):
+				total += 1
+	return total
+
+
 ## Shows the room's name only when exactly one room is fully in view and it has a type.
 func _update_label() -> void:
 	var view_size: Vector2 = get_viewport().get_visible_rect().size / camera.zoom
