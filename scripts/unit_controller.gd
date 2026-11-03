@@ -1,6 +1,6 @@
 extends Node2D
 ## Outside dig mode: tap a unit to select it, then tap a tile to send it there,
-## or tap a marked tile to set a worker digging.
+## or tap a marked tile or a blueprint to set a worker working.
 
 const TapDetector = preload("res://scripts/tap_detector.gd")
 const TAP_SLACK := 10.0  # extra pixels around a unit that still count as tapping it
@@ -32,8 +32,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	var tapped: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
-	if grid.is_marked(tapped):
-		selected.start_digging(tapped)  # ignored by units that can't dig
+	if grid.is_marked(tapped) or not grid.blueprint_at(tapped).is_empty():
+		selected.start_working(tapped)  # ignored by units that can't work
 	else:
 		selected.move_to(tapped)  # does nothing if there's no path
 

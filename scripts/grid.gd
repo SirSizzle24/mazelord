@@ -15,15 +15,20 @@ const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
 
+const BUILD_TIME := 2.0  # seconds of work to build a furnishing
+const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
+
 const NO_TILE := Vector2i(-1, -1)  # stands for "no tile" when a search finds nothing
 const NEIGHBORS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 var tiles: Array = []  # tiles[x][y] holds a Tile value
 var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile -> true)
-var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "built"}
+var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "blocks", "progress", "solid", "built"}
 var occupied: Dictionary = {}  # tile -> the furnishing covering it
+var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
+var nav_version := 0  # goes up with every rebuild, so units can tell the walkable shape changed
 
 
 func _ready() -> void:
@@ -80,19 +85,6 @@ func has_floor_neighbor(tile: Vector2i) -> bool:
 	return false
 
 
-## The closest marked tile a worker could start digging now, or NO_TILE if there isn't one.
-func nearest_diggable(from: Vector2) -> Vector2i:
-	var best := NO_TILE
-	var best_distance := INF
-	for tile in marked:
-		if has_floor_neighbor(tile):
-			var distance := from.distance_to(tile_to_screen(tile))
-			if distance < best_distance:
-				best = tile
-				best_distance = distance
-	return best
-
-
 ## Every tile a furnishing covers, counting from its origin tile along the grid.
 func footprint(origin: Vector2i, size: Vector2i) -> Array[Vector2i]:
 	var tiles_covered: Array[Vector2i] = []
@@ -111,12 +103,86 @@ func can_place(origin: Vector2i, size: Vector2i) -> bool:
 
 
 ## Adds an unbuilt furnishing (a see-through ghost) for a worker to build later.
-func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color) -> void:
-	var furnishing := {"id": id, "origin": origin, "size": size, "color": color, "built": false}
+## Ghosts are walkable; a blocking furnishing turns solid once it's SOLID_AT built.
+func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color, blocks: bool) -> void:
+	var furnishing := {"id": id, "origin": origin, "size": size, "color": color, "blocks": blocks,
+		"progress": 0.0, "solid": false, "built": false}
 	furnishings.append(furnishing)
 	for tile in footprint(origin, size):
 		occupied[tile] = furnishing
 	queue_redraw()
+
+
+## The unbuilt furnishing covering a tile, or an empty dictionary if there isn't one.
+func blueprint_at(tile: Vector2i) -> Dictionary:
+	if occupied.has(tile) and not occupied[tile]["built"]:
+		return occupied[tile]
+	return {}
+
+
+## The middle of a furnishing, in screen position.
+func footprint_center(furnishing: Dictionary) -> Vector2:
+	var first: Vector2 = tile_to_screen(furnishing["origin"])
+	var last: Vector2 = tile_to_screen(furnishing["origin"] + furnishing["size"] - Vector2i.ONE)
+	return (first + last) / 2.0
+
+
+## Adds build progress. Blocking furnishings turn solid at SOLID_AT. Returns true once fully built.
+## Progress is stored on the furnishing, so an interrupted build can be finished by any worker.
+func add_build_progress(furnishing: Dictionary, seconds: float) -> bool:
+	furnishing["progress"] += seconds
+	if furnishing["blocks"] and not furnishing["solid"] and furnishing["progress"] >= BUILD_TIME * SOLID_AT:
+		furnishing["solid"] = true
+		nav_dirty = true  # the walkable shape now needs a hole here
+	if furnishing["progress"] >= BUILD_TIME:
+		furnishing["built"] = true
+		queue_redraw()
+		return true
+	return false
+
+
+## Every spot a worker could stand to work on a job: one per open floor tile touching the job's side,
+## placed just inside that tile so the worker clears the rock or furnishing by its radius.
+## The worker picks the one with the shortest walk.
+func work_spots(job: Dictionary) -> PackedVector2Array:
+	var spots := PackedVector2Array()
+	var work_tiles: Array[Vector2i] = [job["tile"]]
+	if job["kind"] == "build":
+		work_tiles = footprint(job["furnishing"]["origin"], job["furnishing"]["size"])
+	for tile in work_tiles:
+		for offset in NEIGHBORS:
+			var beside: Vector2i = tile + offset
+			if work_tiles.has(beside) or not is_floor(beside):
+				continue
+			if occupied.has(beside) and occupied[beside]["blocks"]:
+				continue  # don't stand where a furnishing is or will be solid
+			var edge_middle := (tile_to_screen(tile) + tile_to_screen(beside)) / 2.0
+			var inward := (tile_to_screen(beside) - edge_middle).normalized()
+			spots.append(edge_middle + inward * (UNIT_RADIUS + 4.0))
+	return spots
+
+
+## The nearest job nobody has claimed: dig a reachable marked tile, or build a blueprint.
+## Returns {"kind", "tile", "furnishing"}, or an empty dictionary if there's no work.
+## For a build job, "tile" is the furnishing's origin, which identifies it.
+## Jobs whose tile is in skip are ignored (a worker passes the ones it couldn't reach).
+func nearest_job(from: Vector2, skip: Dictionary = {}) -> Dictionary:
+	var best := {}
+	var best_distance := INF
+	for tile in marked:
+		if has_floor_neighbor(tile) and not claimed.has(tile) and not skip.has(tile):
+			var distance := from.distance_to(tile_to_screen(tile))
+			if distance < best_distance:
+				best = {"kind": "dig", "tile": tile, "furnishing": {}}
+				best_distance = distance
+	for furnishing in furnishings:
+		var origin: Vector2i = furnishing["origin"]
+		if not furnishing["built"] and not claimed.has(origin) and not skip.has(origin):
+			var distance := from.distance_to(footprint_center(furnishing))
+			if distance < best_distance:
+				best = {"kind": "build", "tile": furnishing["origin"], "furnishing": furnishing}
+				best_distance = distance
+	return best
 
 
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.
@@ -137,11 +203,17 @@ func rebuild_navigation() -> void:
 		for y in GRID_HEIGHT:
 			if tiles[x][y] == Tile.FLOOR:
 				source.add_traversable_outline(_diamond(Vector2i(x, y)))
+	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
+	for furnishing in furnishings:
+		if furnishing["solid"]:
+			for tile in footprint(furnishing["origin"], furnishing["size"]):
+				source.add_obstruction_outline(_diamond(tile))
 
 	var nav_polygon := NavigationPolygon.new()
 	nav_polygon.agent_radius = UNIT_RADIUS
 	NavigationServer2D.bake_from_source_geometry_data(nav_polygon, source)
 	nav_region.navigation_polygon = nav_polygon
+	nav_version += 1
 
 	var elapsed_ms := (Time.get_ticks_usec() - start_time) / 1000.0
 	print("Navigation rebuilt in %.2f ms" % elapsed_ms)  # temporary: measuring the cost

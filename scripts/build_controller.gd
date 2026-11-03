@@ -63,4 +63,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		return  # not all floor, or something's already there
 	if not dungeon.try_spend(item["cost"]):
 		return  # can't afford it
-	grid.place_blueprint(id, tile, item["size"], item["color"])
+	grid.place_blueprint(id, tile, item["size"], item["color"], item.get("blocks", true))
