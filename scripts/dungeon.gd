@@ -42,6 +42,19 @@ const FARM_INTERVAL := 10.0  # seconds between harvests
 const FOOD_PER_CROP_BED := 1  # food each crop bed in a farm adds per harvest
 const EAT_INTERVAL := 20.0  # seconds between meals; each troop eats 1 food per meal
 
+# Morale settles toward a target set by the dungeon; events push it away, and it drifts back.
+# All placeholders to tune.
+const BASE_MORALE := 50.0
+const MORALE_PER_ROOM := 10.0  # each morale room raises the target
+const HUNGER_PENALTY := 25.0  # target drops this much while food is at 0
+const BED_PENALTY := 5.0  # target drops this much for each troop without a bed
+const MORALE_DRIFT := 2.0  # points per second morale moves toward its target
+const DEATH_HIT := 15.0
+const NAMED_DEATH_HIT := 30.0
+const FUNGI_DEATH_FACTOR := 0.5  # fungi see decay as good, so deaths hurt them half as much
+const INJURY_HIT := 5.0
+const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
+
 @export var grid: Node2D
 @export var unit_scene: PackedScene   # the unit "blueprint" to copy when summoning
 @export var units_parent: Node2D      # where new units are placed in the scene tree
@@ -49,6 +62,7 @@ const EAT_INTERVAL := 20.0  # seconds between meals; each troop eats 1 food per 
 
 var mana := 100
 var food := 20
+var morale := BASE_MORALE
 var farm_timer := 0.0
 # Meals start out of step with harvests, so the two never land on the same frame and hide each other
 # on the food display (troops seemed to stop eating when a harvest cancelled out a meal).
@@ -56,6 +70,8 @@ var eat_timer := EAT_INTERVAL - FARM_INTERVAL / 2.0
 
 
 func _process(delta: float) -> void:
+	morale = move_toward(morale, morale_target(), MORALE_DRIFT * delta)
+
 	farm_timer += delta
 	if farm_timer >= FARM_INTERVAL:
 		farm_timer -= FARM_INTERVAL
@@ -69,6 +85,37 @@ func _process(delta: float) -> void:
 		var eaten: int = min(food, troop_count())  # can't eat more than there is
 		if eaten > 0:
 			add_food(-eaten)
+
+
+## Where morale settles if nothing happens: better with morale rooms, worse when hungry or short of beds.
+func morale_target() -> float:
+	var target: float = BASE_MORALE + MORALE_PER_ROOM * rooms.count_rooms("morale_room")
+	if food == 0 and troop_count() > 0:
+		target -= HUNGER_PENALTY
+	var missing_beds: int = max(0, troop_count() - rooms.count_items("quarters", "soil_bed"))
+	target -= BED_PENALTY * missing_beds
+	return clamp(target, 0.0, 100.0)
+
+
+## Pushes morale up or down right now; it then drifts back toward its target.
+func shift_morale(amount: float) -> void:
+	morale = clamp(morale + amount, 0.0, 100.0)
+
+
+# Hooks for raids and the hospital to call later. Nothing calls them yet.
+func on_troop_died(troop_type_id: String, is_named: bool) -> void:
+	var hit := NAMED_DEATH_HIT if is_named else DEATH_HIT
+	if troop_type_id in ["worker", "roundhead"]:  # the fungi troops; replace with a class check later
+		hit *= FUNGI_DEATH_FACTOR
+	shift_morale(-hit)
+
+
+func on_troop_injured() -> void:
+	shift_morale(-INJURY_HIT)
+
+
+func on_troop_healed() -> void:
+	shift_morale(HEALED_BOOST)
 
 
 func add_food(amount: int) -> void:

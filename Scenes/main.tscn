@@ -136,3 +136,10 @@ offset_right = 1240.0
 offset_bottom = 58.0
 theme_override_colors/font_color = Color(1, 0.3, 0.3, 1)
 text = "Out of food!"
+
+[node name="MoraleLabel" type="Label" parent="UI"]
+offset_left = 660.0
+offset_top = 60.0
+offset_right = 1000.0
+offset_bottom = 86.0
+text = "Morale: 50"

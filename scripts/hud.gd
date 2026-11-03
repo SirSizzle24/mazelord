@@ -1,12 +1,17 @@
 extends CanvasLayer
 ## The on-screen controls: mana, food and troop displays, summon buttons and the debug mana button.
 
+## Morale is hidden from players by design; they learn it from how troops behave.
+## Keep this on while developing to see the number, and off to play as a player would.
+const SHOW_DEBUG_STATS := true
+
 @export var dungeon: Node
 
 @onready var mana_label: Label = $ManaLabel
 @onready var food_label: Label = $FoodLabel
 @onready var troop_label: Label = $TroopLabel
 @onready var hunger_warning: Label = $HungerWarning
+@onready var morale_label: Label = $MoraleLabel
 
 
 func _ready() -> void:
@@ -26,6 +31,9 @@ func _process(_delta: float) -> void:
 	# to read fresh each frame rather than tracking every change with signals.
 	troop_label.text = "Troops: %d / %d" % [dungeon.troop_count(), dungeon.troop_cap()]
 	hunger_warning.visible = dungeon.food == 0 and dungeon.troop_count() > 0
+	# Morale drifts every frame, so it's read fresh too. Shown with its target to make the drift visible.
+	morale_label.visible = SHOW_DEBUG_STATS
+	morale_label.text = "[debug] Morale: %d (heading to %d)" % [roundi(dungeon.morale), roundi(dungeon.morale_target())]
 
 
 func _on_food_changed(amount: int) -> void:

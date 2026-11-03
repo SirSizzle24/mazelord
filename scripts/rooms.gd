@@ -91,6 +91,15 @@ func _bounds(room_tiles: Dictionary) -> Rect2:
 	return box
 
 
+## How many rooms of one type exist.
+func count_rooms(room_type: String) -> int:
+	var total := 0
+	for room in rooms:
+		if room["type"] == room_type:
+			total += 1
+	return total
+
+
 ## How many finished furnishings of one kind stand in rooms of one type, e.g. soil beds in quarters.
 func count_items(room_type: String, item_id: String) -> int:
 	var total := 0
