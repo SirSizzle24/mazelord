@@ -24,8 +24,13 @@ const ITEM_COLORS := {"mana_cache": Color(0.45, 0.80, 1.0), "food_cache": Color(
 
 # Cave generation. The map is new every game; each run prints its seed so a map can be replayed.
 const FIXED_SEED := 0  # set to a printed seed to get that exact map again (0 = new map every run)
-const CAVE_FILL := 0.45  # share of tiles that start open before smoothing
-const CAVE_SMOOTHING := 5  # smoothing passes; more passes make smoother, larger caves
+const CHAMBER_COUNT := 8  # open caverns spread around the map, joined by tunnels
+const CHAMBER_RADIUS := Vector2(3.0, 6.0)  # smallest and largest chamber size, in tiles
+const CHAMBER_GAP := 12.0  # least distance between chamber centers, so rock stays between them
+const EXTRA_LINKS := 2  # tunnels beyond the minimum, so the network has some loops
+const EDGE_TUNNELS := 2  # tunnels leading from a chamber off toward the map's edge
+const TUNNEL_WOBBLE := 0.6  # how much tunnels wind on their way, in radians
+const POCKET_COUNT := 5  # small sealed caves away from the network, found only by digging
 const MIN_POCKET := 6  # caves smaller than this many tiles are filled in as rock
 const START_CENTER := Vector2i(30, 30)
 const SAFE_RADIUS := 7  # solid rock kept around the start, so the first passage takes some digging
@@ -74,8 +79,9 @@ func _ready() -> void:
 			starting_room.append(Vector2i(x, y))
 
 
-## Carves natural caves into the rock with cellular automata: random noise, smoothed until it clumps
-## into cave shapes. The biggest connected cave becomes the main labyrinth; smaller ones are pockets.
+## Carves the labyrinth: mostly solid rock, with separate chambers joined by narrow winding tunnels
+## (every chamber is reachable), a couple of tunnels leading off toward the edge, and a few small
+## sealed pockets hidden in the rock.
 func _generate_caves() -> void:
 	var rng := RandomNumberGenerator.new()
 	if FIXED_SEED != 0:
@@ -84,33 +90,61 @@ func _generate_caves() -> void:
 		rng.randomize()
 	print("Map seed: ", rng.seed, "  (set FIXED_SEED to this to replay this map)")
 
-	# 1. Random fill. The outer edge always stays rock.
+	# Everything starts as rock; caves are carved out of it.
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
-			var edge := x == 0 or y == 0 or x == GRID_WIDTH - 1 or y == GRID_HEIGHT - 1
-			tiles[x][y] = Tile.ROCK if edge or rng.randf() >= CAVE_FILL else Tile.FLOOR
+			tiles[x][y] = Tile.ROCK
 
-	# 2. Smoothing: a tile mostly surrounded by rock becomes rock; mostly surrounded by open, opens.
-	for pass_number in CAVE_SMOOTHING:
-		var next: Array = tiles.duplicate(true)  # read the old grid while writing the new one
-		for x in range(1, GRID_WIDTH - 1):
-			for y in range(1, GRID_HEIGHT - 1):
-				var rock_around := 0
-				for dx in range(-1, 2):
-					for dy in range(-1, 2):
-						if (dx != 0 or dy != 0) and tiles[x + dx][y + dy] == Tile.ROCK:
-							rock_around += 1
-				if rock_around >= 5:
-					next[x][y] = Tile.ROCK
-				elif rock_around <= 3:
-					next[x][y] = Tile.FLOOR
-		tiles = next
+	# 1. Chambers: irregular caverns, kept apart from each other and from the start.
+	var chambers: Array[Vector2] = []
+	var chamber_tries := 0
+	while chambers.size() < CHAMBER_COUNT and chamber_tries < 500:
+		chamber_tries += 1
+		var center := Vector2(rng.randi_range(6, GRID_WIDTH - 7), rng.randi_range(6, GRID_HEIGHT - 7))
+		if center.distance_to(Vector2(START_CENTER)) < SAFE_RADIUS + 6:
+			continue
+		var too_close := false
+		for other in chambers:
+			if center.distance_to(other) < CHAMBER_GAP:
+				too_close = true
+		if not too_close:
+			chambers.append(center)
+			_carve_blob(center, rng.randf_range(CHAMBER_RADIUS.x, CHAMBER_RADIUS.y), rng)
 
-	# 3. Solid rock around the start.
-	for x in GRID_WIDTH:
-		for y in GRID_HEIGHT:
-			if Vector2i(x, y).distance_to(START_CENTER) <= SAFE_RADIUS:
-				tiles[x][y] = Tile.ROCK
+	# 2. Links: a minimum spanning tree (the shortest set of links that reaches every chamber),
+	# built by repeatedly joining the closest chamber not yet connected. Then a few extra links for loops.
+	var links: Array = []  # pairs of chamber indexes
+	var joined: Array[int] = [0]
+	while joined.size() < chambers.size():
+		var best_pair := [-1, -1]
+		var best_distance := INF
+		for a in joined:
+			for b in chambers.size():
+				if joined.has(b):
+					continue
+				var distance := chambers[a].distance_to(chambers[b])
+				if distance < best_distance:
+					best_distance = distance
+					best_pair = [a, b]
+		links.append(best_pair)
+		joined.append(best_pair[1])
+	for _n in EXTRA_LINKS:
+		links.append([rng.randi_range(0, chambers.size() - 1), rng.randi_range(0, chambers.size() - 1)])
+
+	# 3. Tunnels: each link becomes a narrow tunnel that winds toward the other chamber.
+	for link in links:
+		if link[0] != link[1]:
+			_carve_tunnel(chambers[link[0]], chambers[link[1]], rng)
+	for _n in EDGE_TUNNELS:
+		var from: Vector2 = chambers[rng.randi_range(0, chambers.size() - 1)]
+		var edge_point := Vector2(rng.randi_range(3, GRID_WIDTH - 4), [3, GRID_HEIGHT - 4][rng.randi_range(0, 1)])
+		_carve_tunnel(from, edge_point, rng)
+
+	# Sealed pockets: small caves anywhere in the rock, not joined to the network.
+	for _n in POCKET_COUNT:
+		var pocket := Vector2(rng.randi_range(4, GRID_WIDTH - 5), rng.randi_range(4, GRID_HEIGHT - 5))
+		if _area_is_rock(Vector2i(pocket), 4):
+			_carve_blob(pocket, rng.randf_range(1.5, 2.5), rng)
 
 	# 4. Fill in caves too small to matter, and keep the rest for placing lairs.
 	var seen: Dictionary = {}
@@ -179,6 +213,73 @@ func _ruin_fits(corner: Vector2i, size: Vector2i) -> bool:
 		for dy in range(-1, size.y + 1):
 			var tile := corner + Vector2i(dx, dy)
 			if not is_in_bounds(tile) or tiles[tile.x][tile.y] != Tile.ROCK or deposits.has(tile):
+				return false
+	return true
+
+
+## Carves an irregular blob: a circle whose edge bulges in and out, so chambers don't look round.
+func _carve_blob(center: Vector2, radius: float, rng: RandomNumberGenerator) -> void:
+	var phase_a := rng.randf() * TAU
+	var phase_b := rng.randf() * TAU
+	var reach := ceili(radius * 1.4)
+	for dx in range(-reach, reach + 1):
+		for dy in range(-reach, reach + 1):
+			var offset := Vector2(dx, dy)
+			var angle := offset.angle()
+			# Two overlapping waves around the edge make the outline lumpy.
+			var edge := radius * (1.0 + 0.25 * sin(3.0 * angle + phase_a) + 0.15 * sin(5.0 * angle + phase_b))
+			if offset.length() <= edge:
+				_carve_circle(center + offset, 0.0)
+
+
+## Carves a narrow tunnel from one point toward another, wandering a little on the way.
+## Steers around the safe ring instead of cutting through it.
+func _carve_tunnel(from: Vector2, to: Vector2, rng: RandomNumberGenerator) -> void:
+	var point := from
+	var wobble := 0.0
+	for _step in 400:  # a safety limit on length
+		if point.distance_to(to) < 1.5:
+			return
+		wobble = clamp(wobble + rng.randf_range(-0.3, 0.3), -TUNNEL_WOBBLE, TUNNEL_WOBBLE)
+		var angle := (to - point).angle() + wobble
+		var ahead := point + Vector2.from_angle(angle)
+		if ahead.distance_to(Vector2(START_CENTER)) <= SAFE_RADIUS + 1:
+			angle = (point - Vector2(START_CENTER)).angle() + PI / 2.0  # go around the safe ring
+			ahead = point + Vector2.from_angle(angle)
+		var previous_tile := Vector2i(roundi(point.x), roundi(point.y))
+		point = ahead
+		_carve_circle(point, 0.8)  # about one to two tiles wide
+		# A diagonal step leaves two tiles touching only at a corner, which units can't pass
+		# (the walkable shape closes off corner gaps), so open a side tile to join them.
+		var tile_now := Vector2i(roundi(point.x), roundi(point.y))
+		if tile_now.x != previous_tile.x and tile_now.y != previous_tile.y:
+			_carve_circle(Vector2(tile_now.x, previous_tile.y), 0.0)
+
+
+## Opens every tile within radius of a point, except inside the safe ring around the start.
+func _carve_circle(center: Vector2, radius: float) -> void:
+	var reach := ceili(radius)
+	for dx in range(-reach, reach + 1):
+		for dy in range(-reach, reach + 1):
+			var tile := Vector2i(roundi(center.x) + dx, roundi(center.y) + dy)
+			if not _well_inside(Vector2(tile)) or Vector2(tile).distance_to(center) > radius:
+				continue
+			if tile.distance_to(START_CENTER) <= SAFE_RADIUS:
+				continue  # keep the safe ring solid, so reaching the network takes some digging
+			tiles[tile.x][tile.y] = Tile.FLOOR
+
+
+## True if a point is far enough from the map's edge to carve, leaving a solid rock border.
+func _well_inside(point: Vector2) -> bool:
+	return point.x >= 2 and point.y >= 2 and point.x <= GRID_WIDTH - 3 and point.y <= GRID_HEIGHT - 3
+
+
+## True if every tile within radius of center is still rock: room for a sealed pocket.
+func _area_is_rock(center: Vector2i, radius: int) -> bool:
+	for dx in range(-radius, radius + 1):
+		for dy in range(-radius, radius + 1):
+			var tile := center + Vector2i(dx, dy)
+			if not is_in_bounds(tile) or tiles[tile.x][tile.y] != Tile.ROCK:
 				return false
 	return true
 
