@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://scripts/rooms.gd" id="9_rooms"]
 [ext_resource type="Script" path="res://scripts/fog.gd" id="10_fog"]
 [ext_resource type="Script" path="res://scripts/job_dispatcher.gd" id="11_jobs"]
+[ext_resource type="Script" path="res://scripts/roster.gd" id="12_roster"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -43,12 +44,14 @@ dungeon = NodePath("../Dungeon")
 camera = NodePath("../Camera")
 room_label = NodePath("../UI/RoomLabel")
 
-[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller", "fog")]
+[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller", "fog", "flight_bar", "element_bar")]
 script = ExtResource("4_unitctrl")
 grid = NodePath("../Grid")
 dig_controller = NodePath("../DigController")
 build_controller = NodePath("../BuildController")
 fog = NodePath("../Fog")
+flight_bar = NodePath("../UI/FlightBar")
+element_bar = NodePath("../UI/ElementBar")
 
 [node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar", "remove_button", "rotate_button", "place_button")]
 script = ExtResource("8_build")
@@ -210,3 +213,39 @@ offset_bottom = 690.0
 horizontal_alignment = 1
 autowrap_mode = 3
 text = "Lore"
+
+[node name="FlightBar" type="HBoxContainer" parent="UI"]
+offset_left = 940.0
+offset_top = 100.0
+offset_right = 1240.0
+offset_bottom = 140.0
+
+[node name="ElementBar" type="HBoxContainer" parent="UI"]
+offset_left = 940.0
+offset_top = 150.0
+offset_right = 1240.0
+offset_bottom = 190.0
+
+[node name="RosterButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 440.0
+offset_right = 123.0
+offset_bottom = 483.0
+toggle_mode = true
+text = "Roster"
+
+[node name="RosterPanel" type="PanelContainer" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button")]
+offset_left = 430.0
+offset_top = 100.0
+offset_right = 900.0
+offset_bottom = 600.0
+script = ExtResource("12_roster")
+dungeon = NodePath("../../Dungeon")
+roster_button = NodePath("../RosterButton")
+
+[node name="Scroll" type="ScrollContainer" parent="UI/RosterPanel"]
+layout_mode = 2
+
+[node name="Rows" type="VBoxContainer" parent="UI/RosterPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3

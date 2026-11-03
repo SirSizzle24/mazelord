@@ -15,6 +15,9 @@ var dungeon: Node  # set by the dungeon; receives hauled items
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
 var can_dig := false  # workers only: digging and building
+var roster_label := ""  # e.g. "Worker 1"; troops are unnamed until they earn fame
+var flight := 0  # which flight it's in: 1 to 5, or 0 for none
+var element := 1  # which element of its flight: 1 to 4
 
 var path: PackedVector2Array = []  # points still to walk to, in straight lines
 var selected := false
@@ -47,6 +50,10 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, RADIUS, color)
 	if selected:
 		draw_arc(Vector2.ZERO, RADIUS + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
+	if flight > 0:
+		# Flight and element above the troop, e.g. "2-1".
+		draw_string(ThemeDB.fallback_font, Vector2(-30, -RADIUS - 6.0), "%d-%d" % [flight, element],
+			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		# A carried item rides above the troop.
 		draw_circle(Vector2(0, -RADIUS - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
@@ -72,8 +79,27 @@ func set_selected(value: bool) -> void:
 
 ## True if this is a worker with nothing to do: no job and nowhere to walk.
 ## The dispatcher only gives work to idle workers, so a troop sent somewhere finishes the trip first.
+## Workers in a flight belong to the army, not the workforce, so they're never idle workers.
 func is_idle_worker() -> bool:
-	return can_dig and job.is_empty() and path.is_empty()
+	return can_dig and flight == 0 and job.is_empty() and path.is_empty()
+
+
+## Puts the troop in a flight and element (flight 0 takes it out). Joining a flight stops dungeon work.
+func set_flight(new_flight: int, new_element: int) -> void:
+	flight = new_flight
+	element = new_element
+	if flight > 0:
+		_stop_working()
+	elif can_dig:
+		dispatcher.request()  # back in the workforce
+	queue_redraw()
+
+
+## Walks to a point (snapped onto walkable ground). Used by flight moves. Cancels any work.
+func move_to_point(point: Vector2) -> void:
+	_stop_working()
+	var map: RID = get_world_2d().navigation_map
+	_walk_to(NavigationServer2D.map_get_closest_point(map, point))
 
 
 ## True if this worker tried and failed to reach that job since the walkable shape last changed.

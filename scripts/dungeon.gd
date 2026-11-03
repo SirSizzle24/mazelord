@@ -4,6 +4,7 @@ extends Node
 signal mana_changed(new_amount: int)
 signal food_changed(new_amount: int)
 signal lore_found(text: String)
+signal troop_summoned(unit: Node2D)  # the roster listens, to add a row
 
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
@@ -73,6 +74,7 @@ const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
 var mana := 100
 var food := 20
 var treasure := 0  # sellable finds, waiting for the merchant
+var summoned_counts: Dictionary = {}  # type id -> how many have been summoned, for roster labels
 var morale := BASE_MORALE
 var farm_timer := 0.0
 var mana_timer := 0.0
@@ -194,5 +196,9 @@ func summon(type_id: String) -> bool:
 	unit.dispatcher = dispatcher
 	unit.dungeon = self
 	unit.setup(type_id, troop_type)
+	# Troops are unnamed until they earn fame, so the roster calls them "Worker 1", "Roundhead 2"...
+	summoned_counts[type_id] = summoned_counts.get(type_id, 0) + 1
+	unit.roster_label = "%s %d" % [troop_type["name"], summoned_counts[type_id]]
 	units_parent.add_child(unit)  # the unit's _ready runs here
+	troop_summoned.emit(unit)
 	return true
