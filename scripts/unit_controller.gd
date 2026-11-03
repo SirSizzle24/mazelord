@@ -2,7 +2,7 @@ extends Node2D
 ## Outside dig mode: tap a unit to select it, then tap a tile to send it there,
 ## or tap a marked tile to set a worker digging.
 
-const TAP_DISTANCE := 10.0  # a touch that moves less than this many pixels is a tap, not a pan
+const TapDetector = preload("res://scripts/tap_detector.gd")
 const TAP_SLACK := 10.0  # extra pixels around a unit that still count as tapping it
 
 @export var grid: Node2D
@@ -10,30 +10,14 @@ const TAP_SLACK := 10.0  # extra pixels around a unit that still count as tappin
 @export var build_controller: Node2D
 
 var selected: Node2D = null  # the selected unit, or null for none
-var press_position := Vector2.ZERO
-var fingers_down := 0
-var tap_possible := false  # false once a touch turns into a pan or a pinch
+var taps := TapDetector.new()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if dig_controller.dig_mode or build_controller.build_mode:
 		return
-	if not (event is InputEventScreenTouch):
+	if not taps.is_tap(event):
 		return
-
-	if event.pressed:
-		fingers_down += 1
-		tap_possible = fingers_down == 1  # a second finger means a pinch, so no tap
-		press_position = event.position
-		return
-
-	# A finger lifted.
-	fingers_down = max(fingers_down - 1, 0)
-	if not tap_possible:
-		return
-	tap_possible = false
-	if event.position.distance_to(press_position) > TAP_DISTANCE:
-		return  # the finger moved: that was a pan
 
 	var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 	var tapped_unit := _unit_at(world_position)

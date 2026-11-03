@@ -1,28 +1,36 @@
 extends Node2D
 ## In build mode, tapping a floor tile places the chosen furnishing as a blueprint.
+## Pick the furnishing from the button bar shown in build mode.
 ## Mana is spent when it's placed; workers will build it in the next step.
 
-const TAP_DISTANCE := 10.0  # a touch that moves less than this many pixels is a tap, not a pan
+const TapDetector = preload("res://scripts/tap_detector.gd")
 
 @export var grid: Node2D
 @export var dungeon: Node
 @export var build_button: Button
 @export var dig_button: Button
-@export var item_picker: OptionButton
+@export var item_bar: Container  # holds one button per furnishing
 
 var build_mode := false
-var item_ids: Array[String] = []  # the furnishing id for each entry in the picker, in order
-var press_position := Vector2.ZERO
-var fingers_down := 0
-var tap_possible := false
+var selected_id := ""  # the furnishing that taps will place
+var taps := TapDetector.new()
 
 
 func _ready() -> void:
+	# One button per furnishing. The group allows only one to be pressed at a time, like radio buttons.
+	var group := ButtonGroup.new()
 	for id in dungeon.FURNISHINGS:
 		var item: Dictionary = dungeon.FURNISHINGS[id]
-		item_picker.add_item("%s (%d)" % [item["name"], item["cost"]])
-		item_ids.append(id)
-	item_picker.visible = false
+		var button := Button.new()
+		button.text = "%s (%d)" % [item["name"], item["cost"]]
+		button.toggle_mode = true
+		button.button_group = group
+		button.pressed.connect(func(): selected_id = id)  # each button remembers its own id
+		item_bar.add_child(button)
+		if selected_id == "":  # the first item starts selected
+			selected_id = id
+			button.button_pressed = true
+	item_bar.visible = false
 
 	build_button.toggled.connect(_on_build_toggled)
 	dig_button.toggled.connect(_on_dig_toggled)
@@ -30,7 +38,7 @@ func _ready() -> void:
 
 func _on_build_toggled(toggled_on: bool) -> void:
 	build_mode = toggled_on
-	item_picker.visible = toggled_on
+	item_bar.visible = toggled_on
 	if toggled_on:
 		dig_button.button_pressed = false  # only one mode at a time
 
@@ -43,25 +51,12 @@ func _on_dig_toggled(toggled_on: bool) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not build_mode:
 		return
-	if not (event is InputEventScreenTouch):
-		return
-
-	# Same tap-or-pan test as the unit controller.
-	if event.pressed:
-		fingers_down += 1
-		tap_possible = fingers_down == 1
-		press_position = event.position
-		return
-	fingers_down = max(fingers_down - 1, 0)
-	if not tap_possible:
-		return
-	tap_possible = false
-	if event.position.distance_to(press_position) > TAP_DISTANCE:
+	if not taps.is_tap(event):
 		return
 
 	var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 	var tile: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
-	var id := item_ids[item_picker.selected]
+	var id := selected_id
 	var item: Dictionary = dungeon.FURNISHINGS[id]
 
 	if not grid.can_place(tile, item["size"]):

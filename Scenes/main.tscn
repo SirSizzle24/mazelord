@@ -26,13 +26,13 @@ grid = NodePath("../Grid")
 dig_controller = NodePath("../DigController")
 build_controller = NodePath("../BuildController")
 
-[node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_picker")]
+[node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar")]
 script = ExtResource("8_build")
 grid = NodePath("../Grid")
 dungeon = NodePath("../Dungeon")
 build_button = NodePath("../UI/BuildButton")
 dig_button = NodePath("../UI/DigButton")
-item_picker = NodePath("../UI/ItemPicker")
+item_bar = NodePath("../UI/ItemBar")
 
 [node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button")]
 script = ExtResource("2_8gbba")
@@ -92,8 +92,9 @@ offset_bottom = 283.0
 toggle_mode = true
 text = "Build"
 
-[node name="ItemPicker" type="OptionButton" parent="UI"]
+[node name="ItemBar" type="GridContainer" parent="UI"]
 offset_left = 140.0
 offset_top = 240.0
-offset_right = 400.0
-offset_bottom = 283.0
+offset_right = 1240.0
+offset_bottom = 380.0
+columns = 4
