@@ -10,6 +10,7 @@ const DIG_TIME := 1.5  # seconds to dig one tile (build time lives on the grid)
 @export var grid: Node2D
 @export var start_tile := Vector2i(30, 30)
 var dispatcher: Node  # set by the dungeon when summoning
+var dungeon: Node  # set by the dungeon; receives hauled items
 
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
@@ -46,15 +47,18 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, RADIUS, color)
 	if selected:
 		draw_arc(Vector2.ZERO, RADIUS + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
+	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
+		# A carried item rides above the troop.
+		draw_circle(Vector2(0, -RADIUS - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
 	var fraction := _job_fraction()
 	if fraction > 0.0 and path.is_empty():
 		# An orange ring fills up while working.
 		draw_arc(Vector2.ZERO, RADIUS + 8.0, -PI / 2.0, -PI / 2.0 + TAU * fraction, 32, Color.ORANGE, 3.0)
 
 
-## How far along the current job is, from 0 to 1.
+## How far along the current job is, from 0 to 1. Hauling shows no ring.
 func _job_fraction() -> float:
-	if job.is_empty():
+	if job.is_empty() or job["kind"] == "haul":
 		return 0.0
 	if job["kind"] == "build":
 		return job["furnishing"]["progress"] / grid.BUILD_TIME
@@ -76,6 +80,21 @@ func is_idle_worker() -> bool:
 func has_failed_to_reach(some_job: Dictionary) -> bool:
 	_refresh_unreachable()
 	return unreachable.has(some_job["tile"])
+
+
+## True if a closer free worker may take this worker's job: it's still walking there (no progress
+## to lose), it isn't carrying anything, and the player didn't assign it directly ("manual").
+func can_be_taken_over() -> bool:
+	if job.is_empty() or path.is_empty() or job.get("manual", false):
+		return false
+	return not (job["kind"] == "haul" and job["carrying"])
+
+
+## Lets another worker have this job: stops, lets go, and asks the dispatcher for something else.
+func give_up_job() -> void:
+	_stop_working()
+	path = PackedVector2Array()
+	dispatcher.request()
 
 
 ## The dispatcher's way of giving this worker a job. Returns false, and remembers the job as
@@ -109,9 +128,9 @@ func start_working(tapped: Vector2i) -> void:
 	var first := {}
 	var blueprint: Dictionary = grid.blueprint_at(tapped)
 	if not blueprint.is_empty() and not grid.claimed.has(blueprint["origin"]):
-		first = {"kind": "build", "tile": blueprint["origin"], "furnishing": blueprint}
+		first = {"kind": "build", "tile": blueprint["origin"], "furnishing": blueprint, "manual": true}
 	elif grid.is_marked(tapped) and grid.has_floor_neighbor(tapped) and not grid.claimed.has(tapped):
-		first = {"kind": "dig", "tile": tapped, "furnishing": {}}
+		first = {"kind": "dig", "tile": tapped, "furnishing": {}, "manual": true}
 	if first.is_empty() or not _take_job(first):
 		dispatcher.request()
 
@@ -122,8 +141,13 @@ func _take_job(new_job: Dictionary) -> bool:
 	job_progress = 0.0
 	grid.claimed[job["tile"]] = self
 
-	# Work from whichever side of the job is the shortest walk away.
-	if not _walk_to_nearest(grid.work_spots(job)):
+	# Hauling: walk onto the item's tile. Digging and building: work from the nearest side.
+	var reached: bool
+	if job["kind"] == "haul":
+		reached = _walk_to(grid.tile_to_screen(job["tile"]))
+	else:
+		reached = _walk_to_nearest(grid.work_spots(job))
+	if not reached:
 		_release_job()
 		return false
 	return true
@@ -136,6 +160,8 @@ func _stop_working() -> void:
 
 
 func _release_job() -> void:
+	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
+		_put_down(job["item"])  # never lose an item: interrupted haulers put it down where they stand
 	if not job.is_empty() and grid.claimed.get(job["tile"]) == self:
 		grid.claimed.erase(job["tile"])
 	job = {}
@@ -174,6 +200,39 @@ func _walk_to_nearest(spots: PackedVector2Array) -> bool:
 	return true
 
 
+## Called when a hauler stops walking: either it just reached the item, or it reached storage.
+func _haul_step() -> void:
+	if not job["carrying"]:
+		# At the item: pick it up and head for storage.
+		job["item"] = grid.take_item(job["tile"])
+		job["carrying"] = true
+		queue_redraw()
+		if not _walk_to(grid.tile_to_screen(job["drop"])):
+			_release_job()  # can't get to storage; releasing puts the item down here
+			queue_redraw()
+			dispatcher.request()
+		return
+	# At storage: deliver it, and only now does it take effect.
+	dungeon.receive_item(job["item"])
+	job["carrying"] = false  # delivered, so releasing the job mustn't put it down again
+	_release_job()
+	queue_redraw()
+	dispatcher.request()
+
+
+## Puts an item on the floor here, or on the nearest free floor tile if this one already has one.
+func _put_down(item: Dictionary) -> void:
+	var here := get_tile()
+	var spots: Array[Vector2i] = [here]
+	for offset in grid.NEIGHBORS:
+		spots.append(here + offset)
+	for spot in spots:
+		if grid.is_floor(spot) and not grid.items.has(spot):
+			grid.drop_item(spot, item)
+			return
+	grid.drop_item(here, item)  # crowded on all sides; it's rare, so stack it here
+
+
 ## Total walking distance along a path, from the unit's position.
 func _path_length(points: PackedVector2Array) -> float:
 	var total := 0.0
@@ -203,6 +262,10 @@ func _process(delta: float) -> void:
 
 	if job.is_empty():
 		return  # idle; the dispatcher will hand out work
+
+	if job["kind"] == "haul":
+		_haul_step()
+		return
 
 	queue_redraw()  # update the progress ring
 	var finished := false

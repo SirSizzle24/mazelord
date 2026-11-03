@@ -30,9 +30,11 @@ units_parent = NodePath("..")
 rooms = NodePath("../Rooms")
 dispatcher = NodePath("../JobDispatcher")
 
-[node name="JobDispatcher" type="Node" parent="." node_paths=PackedStringArray("grid")]
+[node name="JobDispatcher" type="Node" parent="." node_paths=PackedStringArray("grid", "fog", "rooms")]
 script = ExtResource("11_jobs")
 grid = NodePath("../Grid")
+fog = NodePath("../Fog")
+rooms = NodePath("../Rooms")
 
 [node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
 script = ExtResource("9_rooms")
@@ -192,3 +194,19 @@ offset_bottom = 220.0
 toggle_mode = true
 button_pressed = true
 text = "Debug: fog"
+
+[node name="TreasureLabel" type="Label" parent="UI"]
+offset_left = 980.0
+offset_top = 60.0
+offset_right = 1240.0
+offset_bottom = 86.0
+text = "Treasure: 0"
+
+[node name="LoreLabel" type="Label" parent="UI"]
+offset_left = 340.0
+offset_top = 620.0
+offset_right = 940.0
+offset_bottom = 690.0
+horizontal_alignment = 1
+autowrap_mode = 3
+text = "Lore"

@@ -4,8 +4,14 @@ extends Node
 ## nearest free worker rather than whichever worker happened to look first.
 
 const INTERVAL := 0.5  # seconds between regular checks; a free worker can also ask for one right away
+## A free worker takes over a job another worker is still walking to only if it's clearly closer:
+## at most this share of the other worker's distance. The margin stops two nearly equal workers
+## from swapping a job back and forth ("hysteresis": demand a clear advantage before switching).
+const TAKEOVER_MARGIN := 0.75
 
 @export var grid: Node2D
+@export var fog: Node2D
+@export var rooms: Node
 
 var timer := 0.0
 var requested := false  # a worker became free; dispatch on the next frame
@@ -25,6 +31,38 @@ func _process(delta: float) -> void:
 	_dispatch()
 
 
+## A haul job for every item the player has seen, as long as there's a storage room to bring it to.
+func _haul_jobs() -> Array:
+	var jobs: Array = []
+	var drop: Vector2i = rooms.storage_drop_tile()
+	if drop == grid.NO_TILE:
+		return jobs  # nowhere to bring things
+	for tile in grid.items:
+		if fog.is_known(tile) and not grid.claimed.has(tile):
+			jobs.append({"kind": "haul", "tile": tile, "furnishing": {}, "position": grid.tile_to_screen(tile),
+				"drop": drop, "carrying": false, "item": {}})
+	return jobs
+
+
+## Jobs other workers are still walking to, which a closer free worker could take over.
+## Each carries a "holder": the worker who has it now.
+func _takeover_jobs() -> Array:
+	var jobs: Array = []
+	for unit in get_tree().get_nodes_in_group("units"):
+		if unit.can_be_taken_over():
+			var job: Dictionary = unit.job.duplicate()
+			job["position"] = _job_position(job)
+			job["holder"] = unit
+			jobs.append(job)
+	return jobs
+
+
+func _job_position(job: Dictionary) -> Vector2:
+	if job["kind"] == "build":
+		return grid.footprint_center(job["furnishing"])
+	return grid.tile_to_screen(job["tile"])
+
+
 func _dispatch() -> void:
 	var idle: Array = []
 	for unit in get_tree().get_nodes_in_group("units"):
@@ -32,7 +70,7 @@ func _dispatch() -> void:
 			idle.append(unit)
 	if idle.is_empty():
 		return
-	var jobs: Array = grid.open_jobs()
+	var jobs: Array = grid.open_jobs() + _haul_jobs() + _takeover_jobs()
 
 	# Greedy matching: find the closest idle worker and open job anywhere, pair them, and repeat.
 	while not idle.is_empty() and not jobs.is_empty():
@@ -44,12 +82,19 @@ func _dispatch() -> void:
 				if worker.has_failed_to_reach(job):
 					continue
 				var distance: float = worker.position.distance_to(job["position"])
+				if job.has("holder"):
+					var holder_distance: float = job["holder"].position.distance_to(job["position"])
+					if distance > holder_distance * TAKEOVER_MARGIN:
+						continue  # not clearly closer than the worker already heading there
 				if distance < best_distance:
 					best_worker = worker
 					best_job = job
 					best_distance = distance
 		if best_worker == null:
 			return  # every remaining pair is unreachable
+		if best_job.has("holder"):
+			best_job["holder"].give_up_job()  # the farther worker lets go and asks for other work
+			best_job.erase("holder")
 		if best_worker.assign(best_job):
 			idle.erase(best_worker)
 			jobs.erase(best_job)

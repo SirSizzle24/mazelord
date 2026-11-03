@@ -64,6 +64,19 @@ func _touches_door(room_tiles: Dictionary) -> bool:
 	return false
 
 
+## A tile where haulers can drop items: open floor in a storage room, free of blocking furnishings.
+## Returns (-1, -1) if there's no storage room.
+func storage_drop_tile() -> Vector2i:
+	for room in rooms:
+		if room["type"] != "storage":
+			continue
+		for tile in room["tiles"]:
+			var furnishing: Dictionary = grid.furnishing_at(tile)
+			if furnishing.is_empty() or not furnishing["blocks"]:
+				return tile
+	return grid.NO_TILE
+
+
 ## Finished mana taps in any room with a door. Room type doesn't matter, so a well can be
 ## decorated however the player likes without losing production.
 func count_working_taps() -> int:

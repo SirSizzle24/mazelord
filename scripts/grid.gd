@@ -19,6 +19,8 @@ const LINE_COLOR := Color(0.2, 0.2, 0.2)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
 const DEPOSIT_COLOR := Color(0.30, 0.75, 0.95)  # a mana deposit, in rock or on open floor
 const LAIR_COLOR := Color(0.80, 0.15, 0.15)  # a monster lair (a marker until combat exists)
+const ITEM_COLORS := {"mana_cache": Color(0.45, 0.80, 1.0), "food_cache": Color(0.90, 0.75, 0.30),
+	"treasure": Color(0.75, 0.45, 0.95), "lore": Color(0.95, 0.95, 0.90)}
 
 # Cave generation. The map is new every game; each run prints its seed so a map can be replayed.
 const FIXED_SEED := 0  # set to a printed seed to get that exact map again (0 = new map every run)
@@ -31,6 +33,8 @@ const DEPOSIT_COUNT := 8  # mana deposits scattered through caves and rock
 const LAIR_COUNT := 3  # monster lairs, placed only in larger caves
 const LAIR_MIN_CAVE := 25  # caves smaller than this many tiles don't get lairs
 const FEATURE_MIN_DISTANCE := 12  # deposits and lairs stay at least this far from the start
+const RUIN_COUNT := 3  # small sealed rooms hidden in the rock, holding items
+const ITEM_KINDS := ["mana_cache", "food_cache", "treasure", "lore"]
 
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
@@ -45,6 +49,7 @@ var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
 var deposits: Dictionary = {}  # mana deposit tiles (used as a set)
 var lairs: Dictionary = {}  # monster lair tiles (used as a set)
+var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
@@ -128,7 +133,30 @@ func _generate_caves() -> void:
 		if tile.distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE:
 			deposits[tile] = true
 
-	# 6. Monster lairs on open floor in the larger caves, one cave each where possible.
+	# 6. Ruins: small rooms carved into solid rock, sealed on every side so only digging finds them.
+	var lore_count := 0
+	var ruin_tries := 0
+	var ruins_made := 0
+	while ruins_made < RUIN_COUNT and ruin_tries < 300:
+		ruin_tries += 1
+		var size := Vector2i(rng.randi_range(3, 4), rng.randi_range(3, 5))
+		var corner := Vector2i(rng.randi_range(2, GRID_WIDTH - size.x - 3), rng.randi_range(2, GRID_HEIGHT - size.y - 3))
+		if _ruin_fits(corner, size):
+			var ruin_tiles: Array[Vector2i] = []
+			for dx in size.x:
+				for dy in size.y:
+					var tile := corner + Vector2i(dx, dy)
+					tiles[tile.x][tile.y] = Tile.FLOOR
+					ruin_tiles.append(tile)
+			for _n in rng.randi_range(1, 2):  # one or two items per ruin (_n: the count itself isn't used)
+				var spot: Vector2i = ruin_tiles[rng.randi_range(0, ruin_tiles.size() - 1)]
+				var kind: String = ITEM_KINDS[rng.randi_range(0, ITEM_KINDS.size() - 1)]
+				items[spot] = {"kind": kind, "lore_index": lore_count}
+				if kind == "lore":
+					lore_count += 1
+			ruins_made += 1
+
+	# 7. Monster lairs on open floor in the larger caves, one cave each where possible.
 	var tries := 0
 	while lairs.size() < LAIR_COUNT and not big_caves.is_empty() and tries < 200:
 		tries += 1  # a safety limit, in case no spot fits
@@ -140,6 +168,19 @@ func _generate_caves() -> void:
 				big_caves.erase(cave)  # spread lairs across caves while there are enough caves
 
 	nav_dirty = true
+
+
+## True if a ruin of this size fits here: far from the start, and the ruin plus a one-tile border
+## are all solid rock, so it stays sealed until someone digs in.
+func _ruin_fits(corner: Vector2i, size: Vector2i) -> bool:
+	if (corner + size / 2).distance_to(START_CENTER) < FEATURE_MIN_DISTANCE:
+		return false
+	for dx in range(-1, size.x + 1):
+		for dy in range(-1, size.y + 1):
+			var tile := corner + Vector2i(dx, dy)
+			if not is_in_bounds(tile) or tiles[tile.x][tile.y] != Tile.ROCK or deposits.has(tile):
+				return false
+	return true
 
 
 ## All floor tiles joined to start through shared sides (a flood fill, as rooms.gd uses).
@@ -231,6 +272,8 @@ func can_place(origin: Vector2i, size: Vector2i, needs_deposit: bool = false) ->
 			return false
 		if needs_deposit and not deposits.has(tile):
 			return false
+		if items.has(tile):
+			return false  # haul the item away first
 	return true
 
 
@@ -290,7 +333,23 @@ func remove_furnishing(furnishing: Dictionary) -> void:
 func job_still_exists(job: Dictionary) -> bool:
 	if job["kind"] == "dig":
 		return marked.has(job["tile"])
+	if job["kind"] == "haul":
+		return job.get("carrying", false) or items.has(job["tile"])
 	return furnishings.has(job["furnishing"]) and not job["furnishing"]["built"]
+
+
+## Picks up the item on a tile: it's removed from the floor and returned. Empty if there was none.
+func take_item(tile: Vector2i) -> Dictionary:
+	var item: Dictionary = items.get(tile, {})
+	if items.erase(tile):
+		queue_redraw()
+	return item
+
+
+## Puts an item back down, e.g. when a worker can't reach storage.
+func drop_item(tile: Vector2i, item: Dictionary) -> void:
+	items[tile] = item
+	queue_redraw()
 
 
 ## The middle of a furnishing, in screen position.
@@ -406,6 +465,14 @@ func _draw() -> void:
 		for tile in footprint(furnishing["origin"], furnishing["size"]):
 			draw_colored_polygon(diamond(tile), color)
 
+	# Items lying on the floor: a small diamond in the middle of the tile.
+	for tile in items:
+		var center := tile_to_screen(tile)
+		var small := PackedVector2Array()
+		for corner in diamond(tile):
+			small.append(center + (corner - center) * 0.35)
+		draw_colored_polygon(small, ITEM_COLORS[items[tile]["kind"]])
+
 	# The placement preview: fainter than a ghost, and red where the item can't go.
 	if not preview.is_empty():
 		var preview_color: Color = preview["color"] if preview["valid"] else Color(1.0, 0.2, 0.2)
@@ -430,6 +497,8 @@ func _ground_color(tile: Vector2i) -> Color:
 		return DEPOSIT_COLOR if tiles[tile.x][tile.y] == Tile.FLOOR else DEPOSIT_COLOR.darkened(0.35)
 	if lairs.has(tile):
 		return LAIR_COLOR
+	if items.has(tile):
+		return ITEM_COLORS[items[tile]["kind"]]  # so the fog remembers where items lie
 	if tiles[tile.x][tile.y] == Tile.ROCK:
 		return ROCK_COLOR
 	return FLOOR_COLOR

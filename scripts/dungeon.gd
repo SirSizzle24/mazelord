@@ -3,6 +3,7 @@ extends Node
 
 signal mana_changed(new_amount: int)
 signal food_changed(new_amount: int)
+signal lore_found(text: String)
 
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
@@ -45,6 +46,10 @@ const FOOD_PER_CROP_BED := 1  # food each crop bed in a farm adds per harvest
 const EAT_INTERVAL := 20.0  # seconds between meals; each troop eats 1 food per meal
 const MANA_INTERVAL := 5.0  # seconds between mana harvests from taps
 const MANA_PER_TAP := 2  # mana each working tap adds per harvest
+const MANA_CACHE := 30  # mana from a hauled mana cache
+const FOOD_CACHE := 20  # food from a hauled food cache
+## What the ruins say. Placeholders: yours to write. Ruins use these in order.
+const LORE_TEXTS := ["[Lore 1]", "[Lore 2]", "[Lore 3]", "[Lore 4]", "[Lore 5]", "[Lore 6]"]
 
 # Morale settles toward a target set by the dungeon; events push it away, and it drifts back.
 # All placeholders to tune.
@@ -67,6 +72,7 @@ const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
 
 var mana := 100
 var food := 20
+var treasure := 0  # sellable finds, waiting for the merchant
 var morale := BASE_MORALE
 var farm_timer := 0.0
 var mana_timer := 0.0
@@ -136,6 +142,19 @@ func add_food(amount: int) -> void:
 	food_changed.emit(food)
 
 
+## A hauled item arrives in storage, and only now takes effect.
+func receive_item(item: Dictionary) -> void:
+	match item["kind"]:
+		"mana_cache":
+			add_mana(MANA_CACHE)
+		"food_cache":
+			add_food(FOOD_CACHE)
+		"treasure":
+			treasure += 1
+		"lore":
+			lore_found.emit(LORE_TEXTS[item["lore_index"] % LORE_TEXTS.size()])
+
+
 func troop_count() -> int:
 	return get_tree().get_nodes_in_group("units").size()
 
@@ -173,6 +192,7 @@ func summon(type_id: String) -> bool:
 	unit.grid = grid
 	unit.start_tile = SUMMON_TILE
 	unit.dispatcher = dispatcher
+	unit.dungeon = self
 	unit.setup(type_id, troop_type)
 	units_parent.add_child(unit)  # the unit's _ready runs here
 	return true
