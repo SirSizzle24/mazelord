@@ -35,7 +35,7 @@ const ROOM_TYPES := {
 	"rotting_chamber": {"name": "Rotting chamber", "needs": ["rot_pit", "mister"]},
 }
 
-const SUMMON_TILE := Vector2i(10, 10)  # the summoning spot in the starting room
+const SUMMON_TILE := Vector2i(30, 30)  # the summoning spot in the starting room
 
 const FREE_TROOPS := 2  # troops you can have before beds are needed
 const FARM_INTERVAL := 10.0  # seconds between harvests

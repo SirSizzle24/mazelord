@@ -4,6 +4,7 @@ extends Node2D
 @export var grid: Node2D
 @export var camera: Camera2D
 @export var dig_button: Button
+@export var fog: Node2D
 
 var dig_mode := false
 
@@ -29,4 +30,4 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Touch positions are in screen pixels; convert to world, then to the grid's own space.
 		var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 		var tile: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
-		grid.mark(tile)
+		grid.mark(tile, not fog.is_known(tile))  # hidden tiles can be marked whatever they hide

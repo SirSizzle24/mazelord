@@ -2,8 +2,8 @@ extends Node2D
 ## The dungeon grid: stores which tiles are rock or floor, draws them as diamonds,
 ## and builds the navigation shape that units walk on.
 
-const GRID_WIDTH := 20
-const GRID_HEIGHT := 20
+const GRID_WIDTH := 60
+const GRID_HEIGHT := 60
 const TILE_WIDTH := 128   # diamond width in pixels
 const TILE_HEIGHT := 128  # same as the width: squares turned 45°, no squash
 const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
@@ -11,6 +11,7 @@ const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
 enum Tile { ROCK, FLOOR }
 
 signal layout_changed  # sent when floor is dug or a furnishing is finished, so rooms can be re-checked
+signal marks_changed  # sent when dig marks are added or removed, so the fog can show them
 
 const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
@@ -28,6 +29,7 @@ var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile
 var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "blocks", "progress", "solid", "built"}
 var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
+var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
@@ -43,10 +45,11 @@ func _ready() -> void:
 
 	add_child(nav_region)
 
-	# A small pre-dug starting room, as the onboarding design calls for.
-	for x in range(9, 12):
-		for y in range(9, 12):
+	# A small pre-dug starting room in the middle of the map, as the onboarding design calls for.
+	for x in range(29, 32):
+		for y in range(29, 32):
 			dig(Vector2i(x, y))
+			starting_room.append(Vector2i(x, y))
 
 
 func _process(_delta: float) -> void:
@@ -69,11 +72,16 @@ func is_floor(tile: Vector2i) -> bool:
 	return is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.FLOOR
 
 
-## Marks a rock tile to be dug by a worker.
-func mark(tile: Vector2i) -> void:
-	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK and not marked.has(tile):
+## Marks a rock tile to be dug by a worker. In fog, the player can't tell rock from a hidden passage,
+## so hidden tiles can be marked whatever they really are (hidden = true); the fog drops marks that
+## turn out to be on open floor once a troop sees them, so marking never gives a passage away.
+func mark(tile: Vector2i, hidden: bool = false) -> void:
+	if not is_in_bounds(tile) or marked.has(tile):
+		return
+	if hidden or tiles[tile.x][tile.y] == Tile.ROCK:
 		marked[tile] = true
 		queue_redraw()
+		marks_changed.emit()
 
 
 func is_marked(tile: Vector2i) -> bool:
@@ -84,6 +92,7 @@ func is_marked(tile: Vector2i) -> bool:
 func unmark(tile: Vector2i) -> void:
 	if marked.erase(tile):
 		queue_redraw()
+		marks_changed.emit()
 
 
 ## True if a finished door stands on this tile. Doors divide rooms.
@@ -243,9 +252,11 @@ func nearest_job(from: Vector2, skip: Dictionary = {}) -> Dictionary:
 
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.
 func dig(tile: Vector2i) -> void:
+	if marked.erase(tile):  # dug tiles are no longer waiting, even if there was no rock after all
+		queue_redraw()
+		marks_changed.emit()
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
 		tiles[tile.x][tile.y] = Tile.FLOOR
-		marked.erase(tile)  # dug tiles are no longer waiting
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
 		layout_changed.emit()
@@ -259,12 +270,12 @@ func rebuild_navigation() -> void:
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
 			if tiles[x][y] == Tile.FLOOR:
-				source.add_traversable_outline(_diamond(Vector2i(x, y)))
+				source.add_traversable_outline(diamond(Vector2i(x, y)))
 	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
 	for furnishing in furnishings:
 		if furnishing["solid"]:
 			for tile in footprint(furnishing["origin"], furnishing["size"]):
-				source.add_obstruction_outline(_diamond(tile))
+				source.add_obstruction_outline(diamond(tile))
 
 	var nav_polygon := NavigationPolygon.new()
 	nav_polygon.agent_radius = UNIT_RADIUS
@@ -279,16 +290,16 @@ func rebuild_navigation() -> void:
 func _draw() -> void:
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
-			var diamond := _diamond(Vector2i(x, y))
+			var shape := diamond(Vector2i(x, y))
 			var color: Color = FLOOR_COLOR
 			if marked.has(Vector2i(x, y)):
 				color = MARKED_COLOR
 			elif tiles[x][y] == Tile.ROCK:
 				color = ROCK_COLOR
-			draw_colored_polygon(diamond, color)
+			draw_colored_polygon(shape, color)
 
-			var outline := diamond.duplicate()
-			outline.append(diamond[0])  # back to the first corner to close the shape
+			var outline := shape.duplicate()
+			outline.append(shape[0])  # back to the first corner to close the shape
 			draw_polyline(outline, LINE_COLOR, 1.0)
 
 	# Furnishings on top of the floor: see-through until built, solid once built.
@@ -297,7 +308,7 @@ func _draw() -> void:
 		if not furnishing["built"]:
 			color.a = 0.35
 		for tile in footprint(furnishing["origin"], furnishing["size"]):
-			draw_colored_polygon(_diamond(tile), color)
+			draw_colored_polygon(diamond(tile), color)
 
 	# The placement preview: fainter than a ghost, and red where the item can't go.
 	if not preview.is_empty():
@@ -305,11 +316,22 @@ func _draw() -> void:
 		preview_color.a = 0.18
 		for tile in footprint(preview["origin"], preview["size"]):
 			if is_in_bounds(tile):
-				draw_colored_polygon(_diamond(tile), preview_color)
+				draw_colored_polygon(diamond(tile), preview_color)
+
+
+## The color a tile shows right now, counting marks and finished furnishings. The fog remembers this.
+func tile_color(tile: Vector2i) -> Color:
+	if occupied.has(tile) and occupied[tile]["built"]:
+		return occupied[tile]["color"]
+	if marked.has(tile):
+		return MARKED_COLOR
+	if tiles[tile.x][tile.y] == Tile.ROCK:
+		return ROCK_COLOR
+	return FLOOR_COLOR
 
 
 ## The four corners of a tile's diamond: top, right, bottom, left.
-func _diamond(tile: Vector2i) -> PackedVector2Array:
+func diamond(tile: Vector2i) -> PackedVector2Array:
 	var center := tile_to_screen(tile)
 	return PackedVector2Array([
 		center + Vector2(0, -TILE_HEIGHT / 2.0),

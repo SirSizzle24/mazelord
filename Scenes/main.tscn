@@ -9,11 +9,17 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="7_hud"]
 [ext_resource type="Script" path="res://scripts/build_controller.gd" id="8_build"]
 [ext_resource type="Script" path="res://scripts/rooms.gd" id="9_rooms"]
+[ext_resource type="Script" path="res://scripts/fog.gd" id="10_fog"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
 [node name="Grid" type="Node2D" parent="." unique_id=1823644226]
 script = ExtResource("1_jjgbg")
+
+[node name="Fog" type="Node2D" parent="." node_paths=PackedStringArray("grid", "rooms")]
+script = ExtResource("10_fog")
+grid = NodePath("../Grid")
+rooms = NodePath("../Rooms")
 
 [node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms")]
 script = ExtResource("5_dungeon")
@@ -46,11 +52,12 @@ remove_button = NodePath("../UI/RemoveButton")
 rotate_button = NodePath("../UI/RotateButton")
 place_button = NodePath("../UI/PlaceButton")
 
-[node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button")]
+[node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button", "fog")]
 script = ExtResource("2_8gbba")
 grid = NodePath("../Grid")
 camera = NodePath("../Camera")
 dig_button = NodePath("../UI/DigButton")
+fog = NodePath("../Fog")
 
 [node name="Camera" type="Camera2D" parent="." unique_id=493433707 node_paths=PackedStringArray("grid")]
 script = ExtResource("2_bo1nx")

@@ -8,7 +8,7 @@ const DIG_TIME := 1.5  # seconds to dig one tile (build time lives on the grid)
 const IDLE_CHECK := 0.5  # seconds between an idle worker's looks for work
 
 @export var grid: Node2D
-@export var start_tile := Vector2i(10, 10)
+@export var start_tile := Vector2i(30, 30)
 
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
