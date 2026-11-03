@@ -10,6 +10,8 @@ const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
 
 enum Tile { ROCK, FLOOR }
 
+signal layout_changed  # sent when floor is dug or a furnishing is finished, so rooms can be re-checked
+
 const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
@@ -77,6 +79,11 @@ func is_marked(tile: Vector2i) -> bool:
 	return marked.has(tile)
 
 
+## True if a finished door stands on this tile. Doors divide rooms.
+func is_door(tile: Vector2i) -> bool:
+	return occupied.has(tile) and occupied[tile]["id"] == "door" and occupied[tile]["built"]
+
+
 ## True if the tile shares a side with a floor tile, so a worker can reach it to dig.
 func has_floor_neighbor(tile: Vector2i) -> bool:
 	for offset in NEIGHBORS:
@@ -137,6 +144,7 @@ func add_build_progress(furnishing: Dictionary, seconds: float) -> bool:
 	if furnishing["progress"] >= BUILD_TIME:
 		furnishing["built"] = true
 		queue_redraw()
+		layout_changed.emit()
 		return true
 	return false
 
@@ -192,6 +200,7 @@ func dig(tile: Vector2i) -> void:
 		marked.erase(tile)  # dug tiles are no longer waiting
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
+		layout_changed.emit()
 
 
 ## Builds the walkable shape from every floor tile, shrunk by UNIT_RADIUS so units keep clear of rock.

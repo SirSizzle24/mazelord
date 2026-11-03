@@ -24,6 +24,16 @@ const FURNISHINGS := {
 	"door": {"name": "Door", "size": Vector2i(1, 1), "cost": 5, "color": Color(0.50, 0.30, 0.15), "blocks": false},
 }
 
+## Every room type and the furnishings it needs (its minimum set). A room can hold extra items.
+## If a room meets several sets, the type with the most matching items wins; ties go to the first listed.
+const ROOM_TYPES := {
+	"quarters": {"name": "Quarters", "needs": ["soil_bed", "mister"]},
+	"farm": {"name": "Farm", "needs": ["crop_bed", "harvest_bin"]},
+	"storage": {"name": "Storage", "needs": ["shelves", "crates", "resource_vat"]},
+	"morale_room": {"name": "Morale room", "needs": ["tables", "decorations"]},
+	"rotting_chamber": {"name": "Rotting chamber", "needs": ["rot_pit", "mister"]},
+}
+
 const SUMMON_TILE := Vector2i(10, 10)  # the summoning spot in the starting room
 
 @export var grid: Node2D

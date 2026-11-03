@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://Scenes/unit.tscn" id="6_unitscene"]
 [ext_resource type="Script" path="res://scripts/hud.gd" id="7_hud"]
 [ext_resource type="Script" path="res://scripts/build_controller.gd" id="8_build"]
+[ext_resource type="Script" path="res://scripts/rooms.gd" id="9_rooms"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -19,6 +20,13 @@ script = ExtResource("5_dungeon")
 grid = NodePath("../Grid")
 unit_scene = ExtResource("6_unitscene")
 units_parent = NodePath("..")
+
+[node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
+script = ExtResource("9_rooms")
+grid = NodePath("../Grid")
+dungeon = NodePath("../Dungeon")
+camera = NodePath("../Camera")
+room_label = NodePath("../UI/RoomLabel")
 
 [node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller")]
 script = ExtResource("4_unitctrl")
@@ -98,3 +106,10 @@ offset_top = 240.0
 offset_right = 1240.0
 offset_bottom = 380.0
 columns = 4
+
+[node name="RoomLabel" type="Label" parent="UI"]
+offset_left = 320.0
+offset_top = 32.0
+offset_right = 620.0
+offset_bottom = 58.0
+text = "Room"
