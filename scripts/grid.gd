@@ -18,6 +18,14 @@ const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
 
+# Cave generation. The map is new every game; each run prints its seed so a map can be replayed.
+const FIXED_SEED := 0  # set to a printed seed to get that exact map again (0 = new map every run)
+const CAVE_FILL := 0.45  # share of tiles that start open before smoothing
+const CAVE_SMOOTHING := 5  # smoothing passes; more passes make smoother, larger caves
+const MIN_POCKET := 6  # caves smaller than this many tiles are filled in as rock
+const START_CENTER := Vector2i(30, 30)
+const SAFE_RADIUS := 7  # solid rock kept around the start, so the first passage takes some digging
+
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
 
@@ -44,12 +52,81 @@ func _ready() -> void:
 		tiles.append(column)
 
 	add_child(nav_region)
+	_generate_caves()
 
 	# A small pre-dug starting room in the middle of the map, as the onboarding design calls for.
-	for x in range(29, 32):
-		for y in range(29, 32):
+	for x in range(START_CENTER.x - 1, START_CENTER.x + 2):
+		for y in range(START_CENTER.y - 1, START_CENTER.y + 2):
 			dig(Vector2i(x, y))
 			starting_room.append(Vector2i(x, y))
+
+
+## Carves natural caves into the rock with cellular automata: random noise, smoothed until it clumps
+## into cave shapes. The biggest connected cave becomes the main labyrinth; smaller ones are pockets.
+func _generate_caves() -> void:
+	var rng := RandomNumberGenerator.new()
+	if FIXED_SEED != 0:
+		rng.seed = FIXED_SEED
+	else:
+		rng.randomize()
+	print("Map seed: ", rng.seed, "  (set FIXED_SEED to this to replay this map)")
+
+	# 1. Random fill. The outer edge always stays rock.
+	for x in GRID_WIDTH:
+		for y in GRID_HEIGHT:
+			var edge := x == 0 or y == 0 or x == GRID_WIDTH - 1 or y == GRID_HEIGHT - 1
+			tiles[x][y] = Tile.ROCK if edge or rng.randf() >= CAVE_FILL else Tile.FLOOR
+
+	# 2. Smoothing: a tile mostly surrounded by rock becomes rock; mostly surrounded by open, opens.
+	for pass_number in CAVE_SMOOTHING:
+		var next: Array = tiles.duplicate(true)  # read the old grid while writing the new one
+		for x in range(1, GRID_WIDTH - 1):
+			for y in range(1, GRID_HEIGHT - 1):
+				var rock_around := 0
+				for dx in range(-1, 2):
+					for dy in range(-1, 2):
+						if (dx != 0 or dy != 0) and tiles[x + dx][y + dy] == Tile.ROCK:
+							rock_around += 1
+				if rock_around >= 5:
+					next[x][y] = Tile.ROCK
+				elif rock_around <= 3:
+					next[x][y] = Tile.FLOOR
+		tiles = next
+
+	# 3. Solid rock around the start.
+	for x in GRID_WIDTH:
+		for y in GRID_HEIGHT:
+			if Vector2i(x, y).distance_to(START_CENTER) <= SAFE_RADIUS:
+				tiles[x][y] = Tile.ROCK
+
+	# 4. Fill in caves too small to matter.
+	var seen: Dictionary = {}
+	for x in GRID_WIDTH:
+		for y in GRID_HEIGHT:
+			var start := Vector2i(x, y)
+			if seen.has(start) or tiles[x][y] != Tile.FLOOR:
+				continue
+			var cave := _connected_floor(start, seen)
+			if cave.size() < MIN_POCKET:
+				for tile in cave:
+					tiles[tile.x][tile.y] = Tile.ROCK
+	nav_dirty = true
+
+
+## All floor tiles joined to start through shared sides (a flood fill, as rooms.gd uses).
+func _connected_floor(start: Vector2i, seen: Dictionary) -> Array[Vector2i]:
+	var cave: Array[Vector2i] = []
+	var to_visit: Array[Vector2i] = [start]
+	seen[start] = true
+	while not to_visit.is_empty():
+		var tile: Vector2i = to_visit.pop_back()
+		cave.append(tile)
+		for offset in NEIGHBORS:
+			var next: Vector2i = tile + offset
+			if is_in_bounds(next) and not seen.has(next) and tiles[next.x][next.y] == Tile.FLOOR:
+				seen[next] = true
+				to_visit.append(next)
+	return cave
 
 
 func _process(_delta: float) -> void:
@@ -227,27 +304,19 @@ func work_spots(job: Dictionary) -> PackedVector2Array:
 	return spots
 
 
-## The nearest job nobody has claimed: dig a reachable marked tile, or build a blueprint.
-## Returns {"kind", "tile", "furnishing"}, or an empty dictionary if there's no work.
-## For a build job, "tile" is the furnishing's origin, which identifies it.
-## Jobs whose tile is in skip are ignored (a worker passes the ones it couldn't reach).
-func nearest_job(from: Vector2, skip: Dictionary = {}) -> Dictionary:
-	var best := {}
-	var best_distance := INF
+## Every job nobody has claimed yet: digging marked rock a worker can reach, and building blueprints.
+## Each is {"kind", "tile", "furnishing", "position"}. For a build job, "tile" is the furnishing's
+## origin, which identifies it; "position" is where the job is, for measuring distance.
+func open_jobs() -> Array:
+	var jobs: Array = []
 	for tile in marked:
-		if has_floor_neighbor(tile) and not claimed.has(tile) and not skip.has(tile):
-			var distance := from.distance_to(tile_to_screen(tile))
-			if distance < best_distance:
-				best = {"kind": "dig", "tile": tile, "furnishing": {}}
-				best_distance = distance
+		if has_floor_neighbor(tile) and not claimed.has(tile):
+			jobs.append({"kind": "dig", "tile": tile, "furnishing": {}, "position": tile_to_screen(tile)})
 	for furnishing in furnishings:
-		var origin: Vector2i = furnishing["origin"]
-		if not furnishing["built"] and not claimed.has(origin) and not skip.has(origin):
-			var distance := from.distance_to(footprint_center(furnishing))
-			if distance < best_distance:
-				best = {"kind": "build", "tile": furnishing["origin"], "furnishing": furnishing}
-				best_distance = distance
-	return best
+		if not furnishing["built"] and not claimed.has(furnishing["origin"]):
+			jobs.append({"kind": "build", "tile": furnishing["origin"], "furnishing": furnishing,
+				"position": footprint_center(furnishing)})
+	return jobs
 
 
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.

@@ -10,6 +10,7 @@
 [ext_resource type="Script" path="res://scripts/build_controller.gd" id="8_build"]
 [ext_resource type="Script" path="res://scripts/rooms.gd" id="9_rooms"]
 [ext_resource type="Script" path="res://scripts/fog.gd" id="10_fog"]
+[ext_resource type="Script" path="res://scripts/job_dispatcher.gd" id="11_jobs"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -21,12 +22,17 @@ script = ExtResource("10_fog")
 grid = NodePath("../Grid")
 rooms = NodePath("../Rooms")
 
-[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms")]
+[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms", "dispatcher")]
 script = ExtResource("5_dungeon")
 grid = NodePath("../Grid")
 unit_scene = ExtResource("6_unitscene")
 units_parent = NodePath("..")
 rooms = NodePath("../Rooms")
+dispatcher = NodePath("../JobDispatcher")
+
+[node name="JobDispatcher" type="Node" parent="." node_paths=PackedStringArray("grid")]
+script = ExtResource("11_jobs")
+grid = NodePath("../Grid")
 
 [node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
 script = ExtResource("9_rooms")
@@ -35,11 +41,12 @@ dungeon = NodePath("../Dungeon")
 camera = NodePath("../Camera")
 room_label = NodePath("../UI/RoomLabel")
 
-[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller")]
+[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller", "fog")]
 script = ExtResource("4_unitctrl")
 grid = NodePath("../Grid")
 dig_controller = NodePath("../DigController")
 build_controller = NodePath("../BuildController")
+fog = NodePath("../Fog")
 
 [node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar", "remove_button", "rotate_button", "place_button")]
 script = ExtResource("8_build")
@@ -63,9 +70,10 @@ fog = NodePath("../Fog")
 script = ExtResource("2_bo1nx")
 grid = NodePath("../Grid")
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=100359164 node_paths=PackedStringArray("dungeon")]
+[node name="UI" type="CanvasLayer" parent="." unique_id=100359164 node_paths=PackedStringArray("dungeon", "fog")]
 script = ExtResource("7_hud")
 dungeon = NodePath("../Dungeon")
+fog = NodePath("../Fog")
 
 [node name="DigButton" type="Button" parent="UI" unique_id=996881546]
 offset_left = 40.0
@@ -175,3 +183,12 @@ offset_top = 340.0
 offset_right = 123.0
 offset_bottom = 383.0
 text = "Place"
+
+[node name="DebugFogButton" type="Button" parent="UI"]
+offset_left = 270.0
+offset_top = 180.0
+offset_right = 420.0
+offset_bottom = 220.0
+toggle_mode = true
+button_pressed = true
+text = "Debug: fog"

@@ -1,14 +1,15 @@
 extends Node2D
 ## A troop: a colored circle that walks freely along a navigation path.
-## Workers can be set working: they dig marked rock and build blueprints, nearest job first.
+## Workers dig marked rock and build blueprints. The job dispatcher hands out the work; a worker
+## tells it when it's free.
 
 const SPEED := 200.0  # pixels per second
 const RADIUS := 20.0
 const DIG_TIME := 1.5  # seconds to dig one tile (build time lives on the grid)
-const IDLE_CHECK := 0.5  # seconds between an idle worker's looks for work
 
 @export var grid: Node2D
 @export var start_tile := Vector2i(30, 30)
+var dispatcher: Node  # set by the dungeon when summoning
 
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
@@ -17,10 +18,8 @@ var can_dig := false  # workers only: digging and building
 var path: PackedVector2Array = []  # points still to walk to, in straight lines
 var selected := false
 
-var is_working := false  # true while assigned to work: keeps taking the nearest job
 var job: Dictionary = {}  # the current job ({"kind", "tile", "furnishing"}), or empty for none
 var job_progress := 0.0  # seconds spent digging the current tile (build progress lives on the furnishing)
-var idle_time := 0.0  # seconds since an idle worker last looked for work
 var unreachable: Dictionary = {}  # job tiles this worker couldn't reach; skipped until the map changes
 var unreachable_version := -1  # the grid's nav_version when unreachable was last cleared
 
@@ -67,6 +66,33 @@ func set_selected(value: bool) -> void:
 	queue_redraw()
 
 
+## True if this is a worker with nothing to do: no job and nowhere to walk.
+## The dispatcher only gives work to idle workers, so a troop sent somewhere finishes the trip first.
+func is_idle_worker() -> bool:
+	return can_dig and job.is_empty() and path.is_empty()
+
+
+## True if this worker tried and failed to reach that job since the walkable shape last changed.
+func has_failed_to_reach(some_job: Dictionary) -> bool:
+	_refresh_unreachable()
+	return unreachable.has(some_job["tile"])
+
+
+## The dispatcher's way of giving this worker a job. Returns false, and remembers the job as
+## unreachable, if there's no way to it.
+func assign(new_job: Dictionary) -> bool:
+	if _take_job(new_job):
+		return true
+	unreachable[new_job["tile"]] = true
+	return false
+
+
+func _refresh_unreachable() -> void:
+	if unreachable_version != grid.nav_version:
+		unreachable.clear()  # the walkable shape changed, so old failures may be reachable now
+		unreachable_version = grid.nav_version
+
+
 ## Walks to the center of a floor tile. Cancels any work.
 func move_to(target_tile: Vector2i) -> void:
 	_stop_working()
@@ -74,13 +100,12 @@ func move_to(target_tile: Vector2i) -> void:
 		_walk_to(grid.tile_to_screen(target_tile))
 
 
-## Sets a worker working, starting with the job at the tapped tile if it's free; otherwise the nearest job.
-## Idle workers also start working on their own; see _process.
+## The player's direct order: work on the job at the tapped tile if it's free; otherwise go back to
+## the dispatcher for whatever's closest.
 func start_working(tapped: Vector2i) -> void:
 	if not can_dig:
 		return  # only workers dig and build
 	_stop_working()
-	is_working = true
 	var first := {}
 	var blueprint: Dictionary = grid.blueprint_at(tapped)
 	if not blueprint.is_empty() and not grid.claimed.has(blueprint["origin"]):
@@ -88,28 +113,11 @@ func start_working(tapped: Vector2i) -> void:
 	elif grid.is_marked(tapped) and grid.has_floor_neighbor(tapped) and not grid.claimed.has(tapped):
 		first = {"kind": "dig", "tile": tapped, "furnishing": {}}
 	if first.is_empty() or not _take_job(first):
-		_take_next_job()
-
-
-## Takes the nearest job this worker can actually reach, skipping ones it already failed to reach.
-## Stops working if there are none.
-func _take_next_job() -> void:
-	if unreachable_version != grid.nav_version:
-		unreachable.clear()  # the walkable shape changed, so old failures may be reachable now
-		unreachable_version = grid.nav_version
-	while true:
-		var next_job: Dictionary = grid.nearest_job(position, unreachable)
-		if next_job.is_empty():
-			_stop_working()  # nothing left that this worker can reach
-			return
-		if _take_job(next_job):
-			return
-		unreachable[next_job["tile"]] = true  # try the next nearest instead
+		dispatcher.request()
 
 
 ## Claims a job and walks to the nearest side of it. Returns false, claiming nothing, if it can't be reached.
 func _take_job(new_job: Dictionary) -> bool:
-	is_working = true
 	job = new_job
 	job_progress = 0.0
 	grid.claimed[job["tile"]] = self
@@ -121,10 +129,9 @@ func _take_job(new_job: Dictionary) -> bool:
 	return true
 
 
-## Lets go of the current job, so another worker can take it, and stops working.
+## Lets go of the current job, so another worker can take it.
 func _stop_working() -> void:
 	_release_job()
-	is_working = false
 	queue_redraw()
 
 
@@ -183,26 +190,19 @@ func _process(delta: float) -> void:
 		_release_job()
 		path = PackedVector2Array()  # stop walking to it
 		queue_redraw()
-		if is_working:
-			_take_next_job()
+		dispatcher.request()  # free again
 		return
 
 	if not path.is_empty():
 		position = position.move_toward(path[0], SPEED * delta)
 		if position == path[0]:  # reached this point; head for the next
 			path.remove_at(0)
-			if path.is_empty() and is_working and job.is_empty():
-				_take_next_job()  # stepped into a dug tile; find the next job
+			if path.is_empty() and job.is_empty() and can_dig:
+				dispatcher.request()  # arrived with nothing to do (after digging in, or a move order)
 		return
 
 	if job.is_empty():
-		# Idle: a worker looks for work every IDLE_CHECK seconds.
-		if can_dig:
-			idle_time += delta
-			if idle_time >= IDLE_CHECK:
-				idle_time = 0.0
-				_take_next_job()
-		return
+		return  # idle; the dispatcher will hand out work
 
 	queue_redraw()  # update the progress ring
 	var finished := false
@@ -222,5 +222,4 @@ func _process(delta: float) -> void:
 		# Tunnel in: step straight into the freshly dug tile, then look for the next job on arrival.
 		path = PackedVector2Array([grid.tile_to_screen(done["tile"])])
 	else:
-		if is_working:
-			_take_next_job()
+		dispatcher.request()  # built it; free for the next job

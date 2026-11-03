@@ -2,7 +2,7 @@ extends Camera2D
 ## One finger pans (when pan is enabled); two fingers pinch to zoom.
 ## On the laptop, the mouse drags to pan and the wheel zooms.
 
-const MIN_ZOOM := 0.5
+const MIN_ZOOM := 0.15  # zoomed out far enough to fit the whole 60 x 60 map across the screen
 const MAX_ZOOM := 2.0
 const WHEEL_STEP := 1.1
 

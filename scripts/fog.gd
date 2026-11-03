@@ -14,19 +14,17 @@ const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live o
 var memory: Dictionary = {}  # tile -> its color when last seen
 var visible_tiles: Dictionary = {}  # tiles in sight right now (used as a set)
 var timer := 0.0
+var fog_enabled := true  # debug: switch the fog off to see the whole map
 
 
 func _ready() -> void:
 	grid.marks_changed.connect(queue_redraw)  # marks show through the fog, so redraw when they change
-	# The starting room, and the rock around it, start out known.
-	for x in grid.GRID_WIDTH:
-		for y in grid.GRID_HEIGHT:
-			var tile := Vector2i(x, y)
-			if grid.is_floor(tile):
-				# The tile and all eight around it, corners included.
-				for dx in range(-1, 2):
-					for dy in range(-1, 2):
-						_remember(tile + Vector2i(dx, dy))
+	# Only the starting room, and the rock around it, start out known. (Not every floor tile:
+	# the caves are floor too, and remembering them would reveal the whole labyrinth.)
+	for tile in grid.starting_room:
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				_remember(tile + Vector2i(dx, dy))
 	queue_redraw()
 
 
@@ -63,7 +61,13 @@ func _process(delta: float) -> void:
 
 ## True if the player has ever seen this tile, or sees it now.
 func is_known(tile: Vector2i) -> bool:
-	return memory.has(tile) or visible_tiles.has(tile)
+	return not fog_enabled or memory.has(tile) or visible_tiles.has(tile)
+
+
+## Debug: hides or shows the fog. With it off, every tile counts as known.
+func set_fog_enabled(enabled: bool) -> void:
+	fog_enabled = enabled
+	visible = enabled
 
 
 ## Adds tiles and the ring of tiles around them, so a lit room's walls show too.

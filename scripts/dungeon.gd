@@ -35,7 +35,7 @@ const ROOM_TYPES := {
 	"rotting_chamber": {"name": "Rotting chamber", "needs": ["rot_pit", "mister"]},
 }
 
-const SUMMON_TILE := Vector2i(30, 30)  # the summoning spot in the starting room
+const SUMMON_TILE := Vector2i(30, 30)  # the summoning spot in the starting room (the grid's START_CENTER)
 
 const FREE_TROOPS := 2  # troops you can have before beds are needed
 const FARM_INTERVAL := 10.0  # seconds between harvests
@@ -59,6 +59,7 @@ const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
 @export var unit_scene: PackedScene   # the unit "blueprint" to copy when summoning
 @export var units_parent: Node2D      # where new units are placed in the scene tree
 @export var rooms: Node              # tells us which beds and crop beds are in working rooms
+@export var dispatcher: Node         # hands out work; every new troop gets a link to it
 
 var mana := 100
 var food := 20
@@ -159,6 +160,7 @@ func summon(type_id: String) -> bool:
 	var unit: Node2D = unit_scene.instantiate()
 	unit.grid = grid
 	unit.start_tile = SUMMON_TILE
+	unit.dispatcher = dispatcher
 	unit.setup(type_id, troop_type)
 	units_parent.add_child(unit)  # the unit's _ready runs here
 	return true

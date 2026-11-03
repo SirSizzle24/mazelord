@@ -6,6 +6,7 @@ extends CanvasLayer
 const SHOW_DEBUG_STATS := true
 
 @export var dungeon: Node
+@export var fog: Node2D
 
 @onready var mana_label: Label = $ManaLabel
 @onready var food_label: Label = $FoodLabel
@@ -24,6 +25,7 @@ func _ready() -> void:
 	$SummonWorkerButton.pressed.connect(func(): dungeon.summon("worker"))
 	$SummonRoundheadButton.pressed.connect(func(): dungeon.summon("roundhead"))
 	$DebugManaButton.pressed.connect(func(): dungeon.add_mana(100))
+	$DebugFogButton.toggled.connect(fog.set_fog_enabled)  # pressed = fog on
 
 
 func _process(_delta: float) -> void:

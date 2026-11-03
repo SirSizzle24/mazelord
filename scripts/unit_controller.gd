@@ -8,6 +8,7 @@ const TAP_SLACK := 10.0  # extra pixels around a unit that still count as tappin
 @export var grid: Node2D
 @export var dig_controller: Node2D
 @export var build_controller: Node2D
+@export var fog: Node2D
 
 var selected: Node2D = null  # the selected unit, or null for none
 var taps := TapDetector.new()
@@ -34,8 +35,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var tapped: Vector2i = grid.screen_to_tile(grid.to_local(world_position))
 	if grid.is_marked(tapped) or not grid.blueprint_at(tapped).is_empty():
 		selected.start_working(tapped)  # ignored by units that can't work
-	else:
+	elif fog.is_known(tapped):
 		selected.move_to(tapped)  # does nothing if there's no path
+	# Taps on unknown tiles do nothing: walking there would give away whether it's open.
 
 
 ## The unit under a world position, or null if there isn't one.
