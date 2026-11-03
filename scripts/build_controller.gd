@@ -104,15 +104,15 @@ func _update_preview() -> void:
 		place_button.disabled = true
 		return
 	var item: Dictionary = dungeon.FURNISHINGS[selected_id]
-	var fits: bool = grid.can_place(preview_tile, _current_size())
+	var fits: bool = grid.can_place(preview_tile, _current_size(), item.get("needs_deposit", false))
 	grid.set_preview(preview_tile, _current_size(), item["color"], fits)
 	place_button.disabled = not (fits and dungeon.mana >= item["cost"])
 
 
 func _on_place_pressed() -> void:
 	var item: Dictionary = dungeon.FURNISHINGS[selected_id]
-	if not grid.can_place(preview_tile, _current_size()):
-		return  # not all floor, or something's already there
+	if not grid.can_place(preview_tile, _current_size(), item.get("needs_deposit", false)):
+		return  # not all floor, something's already there, or it needs a deposit
 	if not dungeon.try_spend(item["cost"]):
 		return  # can't afford it
 	grid.place_blueprint(selected_id, preview_tile, _current_size(), item["color"], item.get("blocks", true), rotation_steps)

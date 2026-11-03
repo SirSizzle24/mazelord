@@ -7,7 +7,7 @@ extends Node
 @export var camera: Camera2D
 @export var room_label: Label
 
-var rooms: Array = []  # each room: {"tiles": tile -> true, "type": room type id or "", "bounds": Rect2}
+var rooms: Array = []  # each room: {"tiles", "type" (or ""), "bounds", "has_door"}
 var rooms_dirty := true  # re-check rooms on the next frame
 
 
@@ -34,7 +34,8 @@ func _find_rooms() -> void:
 			if seen.has(start) or not grid.is_floor(start) or grid.is_door(start):
 				continue
 			var room_tiles := _flood_fill(start, seen)
-			rooms.append({"tiles": room_tiles, "type": _room_type(room_tiles), "bounds": _bounds(room_tiles)})
+			rooms.append({"tiles": room_tiles, "type": _room_type(room_tiles), "bounds": _bounds(room_tiles),
+				"has_door": _touches_door(room_tiles)})
 
 
 ## Every tile reachable from start without crossing rock or a door: a "flood fill", like a paint bucket tool.
@@ -52,6 +53,28 @@ func _flood_fill(start: Vector2i, seen: Dictionary) -> Dictionary:
 			seen[next] = true
 			to_visit.append(next)
 	return room_tiles
+
+
+## True if any of the room's tiles sits next to a finished door: the area is divided off.
+func _touches_door(room_tiles: Dictionary) -> bool:
+	for tile in room_tiles:
+		for offset in grid.NEIGHBORS:
+			if grid.is_door(tile + offset):
+				return true
+	return false
+
+
+## Finished mana taps in any room with a door. Room type doesn't matter, so a well can be
+## decorated however the player likes without losing production.
+func count_working_taps() -> int:
+	var total := 0
+	for room in rooms:
+		if not room["has_door"]:
+			continue
+		for furnishing in grid.furnishings:
+			if furnishing["built"] and furnishing["id"] == "mana_tap" and room["tiles"].has(furnishing["origin"]):
+				total += 1
+	return total
 
 
 ## The room type whose minimum set this room meets with the most matching items, or "" for none.

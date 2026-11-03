@@ -17,6 +17,8 @@ const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const LINE_COLOR := Color(0.2, 0.2, 0.2)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
+const DEPOSIT_COLOR := Color(0.30, 0.75, 0.95)  # a mana deposit, in rock or on open floor
+const LAIR_COLOR := Color(0.80, 0.15, 0.15)  # a monster lair (a marker until combat exists)
 
 # Cave generation. The map is new every game; each run prints its seed so a map can be replayed.
 const FIXED_SEED := 0  # set to a printed seed to get that exact map again (0 = new map every run)
@@ -25,6 +27,10 @@ const CAVE_SMOOTHING := 5  # smoothing passes; more passes make smoother, larger
 const MIN_POCKET := 6  # caves smaller than this many tiles are filled in as rock
 const START_CENTER := Vector2i(30, 30)
 const SAFE_RADIUS := 7  # solid rock kept around the start, so the first passage takes some digging
+const DEPOSIT_COUNT := 8  # mana deposits scattered through caves and rock
+const LAIR_COUNT := 3  # monster lairs, placed only in larger caves
+const LAIR_MIN_CAVE := 25  # caves smaller than this many tiles don't get lairs
+const FEATURE_MIN_DISTANCE := 12  # deposits and lairs stay at least this far from the start
 
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
@@ -37,6 +43,8 @@ var marked: Dictionary = {}  # rock tiles waiting to be dug; used as a set (tile
 var furnishings: Array = []  # each one: {"id", "origin", "size", "color", "blocks", "progress", "solid", "built"}
 var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
+var deposits: Dictionary = {}  # mana deposit tiles (used as a set)
+var lairs: Dictionary = {}  # monster lair tiles (used as a set)
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
@@ -99,8 +107,9 @@ func _generate_caves() -> void:
 			if Vector2i(x, y).distance_to(START_CENTER) <= SAFE_RADIUS:
 				tiles[x][y] = Tile.ROCK
 
-	# 4. Fill in caves too small to matter.
+	# 4. Fill in caves too small to matter, and keep the rest for placing lairs.
 	var seen: Dictionary = {}
+	var big_caves: Array = []
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
 			var start := Vector2i(x, y)
@@ -110,6 +119,26 @@ func _generate_caves() -> void:
 			if cave.size() < MIN_POCKET:
 				for tile in cave:
 					tiles[tile.x][tile.y] = Tile.ROCK
+			elif cave.size() >= LAIR_MIN_CAVE:
+				big_caves.append(cave)
+
+	# 5. Mana deposits anywhere away from the start, in caves or in the rock.
+	while deposits.size() < DEPOSIT_COUNT:
+		var tile := Vector2i(rng.randi_range(1, GRID_WIDTH - 2), rng.randi_range(1, GRID_HEIGHT - 2))
+		if tile.distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE:
+			deposits[tile] = true
+
+	# 6. Monster lairs on open floor in the larger caves, one cave each where possible.
+	var tries := 0
+	while lairs.size() < LAIR_COUNT and not big_caves.is_empty() and tries < 200:
+		tries += 1  # a safety limit, in case no spot fits
+		var cave: Array = big_caves[rng.randi_range(0, big_caves.size() - 1)]
+		var tile: Vector2i = cave[rng.randi_range(0, cave.size() - 1)]
+		if tile.distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE and not deposits.has(tile):
+			lairs[tile] = true
+			if big_caves.size() > LAIR_COUNT - lairs.size():
+				big_caves.erase(cave)  # spread lairs across caves while there are enough caves
+
 	nav_dirty = true
 
 
@@ -195,9 +224,12 @@ func footprint(origin: Vector2i, size: Vector2i) -> Array[Vector2i]:
 
 
 ## True if every tile under the footprint is open floor with nothing on it.
-func can_place(origin: Vector2i, size: Vector2i) -> bool:
+## needs_deposit is for items like the mana tap, which can only stand on a mana deposit.
+func can_place(origin: Vector2i, size: Vector2i, needs_deposit: bool = false) -> bool:
 	for tile in footprint(origin, size):
 		if not is_floor(tile) or occupied.has(tile):
+			return false
+		if needs_deposit and not deposits.has(tile):
 			return false
 	return true
 
@@ -360,12 +392,7 @@ func _draw() -> void:
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
 			var shape := diamond(Vector2i(x, y))
-			var color: Color = FLOOR_COLOR
-			if marked.has(Vector2i(x, y)):
-				color = MARKED_COLOR
-			elif tiles[x][y] == Tile.ROCK:
-				color = ROCK_COLOR
-			draw_colored_polygon(shape, color)
+			draw_colored_polygon(shape, _ground_color(Vector2i(x, y)))
 
 			var outline := shape.duplicate()
 			outline.append(shape[0])  # back to the first corner to close the shape
@@ -392,8 +419,17 @@ func _draw() -> void:
 func tile_color(tile: Vector2i) -> Color:
 	if occupied.has(tile) and occupied[tile]["built"]:
 		return occupied[tile]["color"]
+	return _ground_color(tile)
+
+
+## The color of the ground itself: marks first, then deposits and lairs, then rock or floor.
+func _ground_color(tile: Vector2i) -> Color:
 	if marked.has(tile):
 		return MARKED_COLOR
+	if deposits.has(tile):
+		return DEPOSIT_COLOR if tiles[tile.x][tile.y] == Tile.FLOOR else DEPOSIT_COLOR.darkened(0.35)
+	if lairs.has(tile):
+		return LAIR_COLOR
 	if tiles[tile.x][tile.y] == Tile.ROCK:
 		return ROCK_COLOR
 	return FLOOR_COLOR

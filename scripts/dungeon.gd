@@ -22,6 +22,8 @@ const FURNISHINGS := {
 	"tables": {"name": "Tables and seats", "size": Vector2i(2, 2), "cost": 15, "color": Color(0.70, 0.45, 0.30)},
 	"decorations": {"name": "Decorations", "size": Vector2i(1, 1), "cost": 10, "color": Color(0.85, 0.40, 0.60)},
 	"rot_pit": {"name": "Rot pit", "size": Vector2i(2, 2), "cost": 20, "color": Color(0.30, 0.35, 0.20)},
+	"mana_tap": {"name": "Mana tap", "size": Vector2i(1, 1), "cost": 25, "color": Color(0.55, 0.85, 1.0),
+		"needs_deposit": true},
 	"door": {"name": "Door", "size": Vector2i(1, 1), "cost": 5, "color": Color(0.50, 0.30, 0.15), "blocks": false},
 }
 
@@ -41,6 +43,8 @@ const FREE_TROOPS := 2  # troops you can have before beds are needed
 const FARM_INTERVAL := 10.0  # seconds between harvests
 const FOOD_PER_CROP_BED := 1  # food each crop bed in a farm adds per harvest
 const EAT_INTERVAL := 20.0  # seconds between meals; each troop eats 1 food per meal
+const MANA_INTERVAL := 5.0  # seconds between mana harvests from taps
+const MANA_PER_TAP := 2  # mana each working tap adds per harvest
 
 # Morale settles toward a target set by the dungeon; events push it away, and it drifts back.
 # All placeholders to tune.
@@ -65,6 +69,7 @@ var mana := 100
 var food := 20
 var morale := BASE_MORALE
 var farm_timer := 0.0
+var mana_timer := 0.0
 # Meals start out of step with harvests, so the two never land on the same frame and hide each other
 # on the food display (troops seemed to stop eating when a harvest cancelled out a meal).
 var eat_timer := EAT_INTERVAL - FARM_INTERVAL / 2.0
@@ -79,6 +84,13 @@ func _process(delta: float) -> void:
 		var grown: int = rooms.count_items("farm", "crop_bed") * FOOD_PER_CROP_BED
 		if grown > 0:
 			add_food(grown)
+
+	mana_timer += delta
+	if mana_timer >= MANA_INTERVAL:
+		mana_timer -= MANA_INTERVAL
+		var tapped: int = rooms.count_working_taps() * MANA_PER_TAP
+		if tapped > 0:
+			add_mana(tapped)
 
 	eat_timer += delta
 	if eat_timer >= EAT_INTERVAL:
