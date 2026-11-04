@@ -77,6 +77,18 @@ func storage_drop_tile() -> Vector2i:
 	return grid.NO_TILE
 
 
+## Somewhere in your quarters for a sheltering worker to stand (the starting room if there are no
+## quarters), picked at random so workers spread out.
+func shelter_spot() -> Vector2:
+	var choices: Array = []
+	for room in rooms:
+		if room["type"] == "quarters":
+			choices.append_array(room["tiles"].keys())
+	if choices.is_empty():
+		choices = grid.starting_room
+	return grid.tile_to_screen(choices.pick_random())
+
+
 ## Finished mana taps in any room with a door. Room type doesn't matter, so a well can be
 ## decorated however the player likes without losing production.
 func count_working_taps() -> int:

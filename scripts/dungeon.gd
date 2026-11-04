@@ -83,6 +83,7 @@ const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
 var mana := 100
 var food := 20
 var treasure := 0  # sellable finds, waiting for the merchant
+var workers_sheltered := false  # the alarm: workers stay in quarters and do no work
 var summoned_counts: Dictionary = {}  # type id -> how many have been summoned, for roster labels
 var morale := BASE_MORALE
 var farm_timer := 0.0
@@ -183,6 +184,17 @@ func spawn_raider() -> bool:
 	raider.position = grid.tile_to_screen(spots.pick_random())
 	units_parent.add_child(raider)
 	return true
+
+
+## The alarm button: sends every worker to quarters (or back to work). Sheltered workers do nothing.
+func set_workers_sheltered(sheltered: bool) -> void:
+	workers_sheltered = sheltered
+	for unit in get_tree().get_nodes_in_group("units"):
+		if unit.can_dig and not unit.downed:
+			if sheltered:
+				unit.move_to_point(rooms.shelter_spot())
+			else:
+				dispatcher.request()  # back to work
 
 
 func troop_count() -> int:

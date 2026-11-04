@@ -17,6 +17,7 @@ const SPREAD := 34.0  # pixels between flight members around a destination, so t
 @export var fog: Node2D
 @export var flight_bar: Container    # buttons F1 to F5, the backup way to select a flight
 @export var element_bar: Container   # toggle buttons 1 to 4, shown while a flight is selected
+@export var roster: Node  # the troop cards; a long press on a troop opens its card
 
 var selected: Node2D = null  # the selected troop in no flight, or null
 var selected_flight := 0  # the selected flight, or 0 for none
@@ -48,6 +49,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
 	var tapped_unit := _unit_at(world_position)
 
+	if tapped_unit != null and taps.was_long_press:
+		roster.open_for(tapped_unit)
+		return
 	if tapped_unit != null:
 		if tapped_unit.flight > 0:
 			# Tapping a flight member selects (or deselects) its whole flight.

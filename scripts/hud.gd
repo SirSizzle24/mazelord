@@ -34,6 +34,7 @@ func _ready() -> void:
 	$DebugFogButton.toggled.connect(fog.set_fog_enabled)  # pressed = fog on
 	$DebugRaiderButton.pressed.connect(func(): dungeon.spawn_raider())
 	$DebugRaidNowButton.pressed.connect(func(): raids.raid_now())
+	$AlarmButton.toggled.connect(dungeon.set_workers_sheltered)  # pressed = workers to quarters
 	dungeon.lore_found.connect(_on_lore_found)
 	lore_label.visible = false
 

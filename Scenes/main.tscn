@@ -57,7 +57,7 @@ dungeon = NodePath("../Dungeon")
 camera = NodePath("../Camera")
 room_label = NodePath("../UI/RoomLabel")
 
-[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller", "fog", "flight_bar", "element_bar")]
+[node name="UnitController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dig_controller", "build_controller", "fog", "flight_bar", "element_bar", "roster")]
 script = ExtResource("4_unitctrl")
 grid = NodePath("../Grid")
 dig_controller = NodePath("../DigController")
@@ -65,6 +65,7 @@ build_controller = NodePath("../BuildController")
 fog = NodePath("../Fog")
 flight_bar = NodePath("../UI/FlightBar")
 element_bar = NodePath("../UI/ElementBar")
+roster = NodePath("../UI/RosterPanel")
 
 [node name="BuildController" type="Node2D" parent="." node_paths=PackedStringArray("grid", "dungeon", "build_button", "dig_button", "item_bar", "remove_button", "rotate_button", "place_button")]
 script = ExtResource("8_build")
@@ -249,20 +250,13 @@ toggle_mode = true
 text = "Roster"
 
 [node name="RosterPanel" type="PanelContainer" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button")]
-offset_left = 430.0
-offset_top = 100.0
-offset_right = 900.0
-offset_bottom = 600.0
+offset_left = 140.0
+offset_top = 60.0
+offset_right = 1240.0
+offset_bottom = 700.0
 script = ExtResource("12_roster")
 dungeon = NodePath("../../Dungeon")
 roster_button = NodePath("../RosterButton")
-
-[node name="Scroll" type="ScrollContainer" parent="UI/RosterPanel"]
-layout_mode = 2
-
-[node name="Rows" type="VBoxContainer" parent="UI/RosterPanel/Scroll"]
-layout_mode = 2
-size_flags_horizontal = 3
 
 [node name="DebugRaiderButton" type="Button" parent="UI"]
 offset_left = 270.0
@@ -285,3 +279,11 @@ offset_top = 130.0
 offset_right = 640.0
 offset_bottom = 170.0
 text = "Debug: raid now"
+
+[node name="AlarmButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 490.0
+offset_right = 260.0
+offset_bottom = 533.0
+toggle_mode = true
+text = "Alarm: workers to quarters"

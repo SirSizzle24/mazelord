@@ -101,20 +101,32 @@ func set_selected(value: bool) -> void:
 
 ## True if this is a worker with nothing to do: no job and nowhere to walk.
 ## The dispatcher only gives work to idle workers, so a troop sent somewhere finishes the trip first.
-## Workers in a flight belong to the army, not the workforce, so they're never idle workers.
+## Workers never join flights, and sheltered workers (the alarm) do no work.
 func is_idle_worker() -> bool:
-	return can_dig and not downed and flight == 0 and job.is_empty() and path.is_empty()
+	return can_dig and not downed and not dungeon.workers_sheltered and job.is_empty() and path.is_empty()
 
 
-## Puts the troop in a flight and element (flight 0 takes it out). Joining a flight stops dungeon work.
+## Puts a fighter in a flight and element (flight 0 takes it out). Workers can't join flights:
+## they belong to the workforce and shouldn't flood the front lines.
 func set_flight(new_flight: int, new_element: int) -> void:
+	if can_dig:
+		return
 	flight = new_flight
 	element = new_element
-	if flight > 0:
-		_stop_working()
-	elif can_dig:
-		dispatcher.request()  # back in the workforce
 	queue_redraw()
+
+
+## A short description of what the troop is doing, for its card.
+func status_text() -> String:
+	if downed:
+		return "Injured (%d s left)" % ceili(death_time_left) if not grid.has_mycelium(get_tile()) else "Healing"
+	if can_dig and dungeon.workers_sheltered:
+		return "In quarters"
+	if not job.is_empty():
+		return {"dig": "Digging", "build": "Building", "haul": "Hauling", "rescue": "Rescuing"}[job["kind"]]
+	if flight > 0:
+		return "Flight %d, element %d" % [flight, element]
+	return "Moving" if not path.is_empty() else "Idle"
 
 
 ## Walks to a point (snapped onto walkable ground). Used by flight moves. Cancels any work.
