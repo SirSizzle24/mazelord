@@ -1,5 +1,6 @@
-extends Node2D
+extends "res://scripts/fighter.gd"
 ## A troop: a colored circle that walks freely along a navigation path.
+## Combat (health, attacking raiders in range, being downed) comes from fighter.gd.
 ## Workers dig marked rock and build blueprints. The job dispatcher hands out the work; a worker
 ## tells it when it's free.
 
@@ -33,10 +34,12 @@ func setup(new_type_id: String, troop_type: Dictionary) -> void:
 	type_id = new_type_id
 	color = troop_type["color"]
 	can_dig = troop_type["can_dig"]
+	set_stats(troop_type)
 
 
 func _ready() -> void:
 	add_to_group("units")  # lets the controller find every unit
+	enemy_group = "raiders"
 	grid.dig(start_tile)  # make sure it starts on floor
 	position = grid.tile_to_screen(start_tile)
 
@@ -47,13 +50,14 @@ func get_tile() -> Vector2i:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, RADIUS, color)
+	draw_circle(Vector2.ZERO, RADIUS, color.darkened(0.5) if downed else color)
 	if selected:
 		draw_arc(Vector2.ZERO, RADIUS + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
 	if flight > 0:
 		# Flight and element above the troop, e.g. "2-1".
 		draw_string(ThemeDB.fallback_font, Vector2(-30, -RADIUS - 6.0), "%d-%d" % [flight, element],
 			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
+	_draw_combat(RADIUS)
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		# A carried item rides above the troop.
 		draw_circle(Vector2(0, -RADIUS - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
@@ -81,7 +85,7 @@ func set_selected(value: bool) -> void:
 ## The dispatcher only gives work to idle workers, so a troop sent somewhere finishes the trip first.
 ## Workers in a flight belong to the army, not the workforce, so they're never idle workers.
 func is_idle_worker() -> bool:
-	return can_dig and flight == 0 and job.is_empty() and path.is_empty()
+	return can_dig and not downed and flight == 0 and job.is_empty() and path.is_empty()
 
 
 ## Puts the troop in a flight and element (flight 0 takes it out). Joining a flight stops dungeon work.
@@ -97,6 +101,8 @@ func set_flight(new_flight: int, new_element: int) -> void:
 
 ## Walks to a point (snapped onto walkable ground). Used by flight moves. Cancels any work.
 func move_to_point(point: Vector2) -> void:
+	if downed:
+		return
 	_stop_working()
 	var map: RID = get_world_2d().navigation_map
 	_walk_to(NavigationServer2D.map_get_closest_point(map, point))
@@ -140,6 +146,8 @@ func _refresh_unreachable() -> void:
 
 ## Walks to the center of a floor tile. Cancels any work.
 func move_to(target_tile: Vector2i) -> void:
+	if downed:
+		return
 	_stop_working()
 	if grid.is_floor(target_tile):
 		_walk_to(grid.tile_to_screen(target_tile))
@@ -148,8 +156,8 @@ func move_to(target_tile: Vector2i) -> void:
 ## The player's direct order: work on the job at the tapped tile if it's free; otherwise go back to
 ## the dispatcher for whatever's closest.
 func start_working(tapped: Vector2i) -> void:
-	if not can_dig:
-		return  # only workers dig and build
+	if not can_dig or downed:
+		return  # only standing workers dig and build
 	_stop_working()
 	var first := {}
 	var blueprint: Dictionary = grid.blueprint_at(tapped)
@@ -212,9 +220,9 @@ func _walk_to_nearest(spots: PackedVector2Array) -> bool:
 	var best_path := PackedVector2Array()
 	var best_length := INF
 	for spot in spots:
-		var target: Vector2 = NavigationServer2D.map_get_closest_point(map, spot)  # snap onto walkable ground
-		var candidate: PackedVector2Array = NavigationServer2D.map_get_path(map, position, target, true)
-		if candidate.is_empty() or candidate[candidate.size() - 1].distance_to(target) > RADIUS:
+		var spot_on_ground: Vector2 = NavigationServer2D.map_get_closest_point(map, spot)  # snap onto walkable ground
+		var candidate: PackedVector2Array = NavigationServer2D.map_get_path(map, position, spot_on_ground, true)
+		if candidate.is_empty() or candidate[candidate.size() - 1].distance_to(spot_on_ground) > RADIUS:
 			continue  # can't get there
 		var length := _path_length(candidate)
 		if length < best_length:
@@ -269,7 +277,18 @@ func _path_length(points: PackedVector2Array) -> float:
 	return total
 
 
+## A downed troop drops what it's doing. Injuries and recovery come in a later draft.
+func _on_downed() -> void:
+	_stop_working()
+	path = PackedVector2Array()
+	set_selected(false)
+
+
 func _process(delta: float) -> void:
+	if downed:
+		return
+	_fight(delta)  # attacks any raider in range, even while walking
+
 	# The player may have cancelled this job (unmarked the rock or removed the blueprint).
 	if not job.is_empty() and not grid.job_still_exists(job):
 		_release_job()

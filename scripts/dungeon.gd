@@ -8,9 +8,15 @@ signal troop_summoned(unit: Node2D)  # the roster listens, to add a row
 
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
-	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true},
-	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false},
+	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true,
+		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2},
+	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false,
+		"health": 60.0, "damage": 8.0, "range": 55.0, "attack_interval": 1.0},
 }
+## The generic raider for the prototype. Stats are placeholders to tune.
+const RAIDER_STATS := {"health": 40.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
+const RAIDER_MIN_DISTANCE := 10.0  # debug raiders appear at least this many tiles from the core
+
 ## Every furnishing that can be built. Size is in tiles along the grid; costs are placeholders to tune.
 ## Furnishings block movement unless they say "blocks": false.
 const FURNISHINGS := {
@@ -70,6 +76,8 @@ const HEALED_BOOST := 8.0  # healing lifts morale more than the injury cost
 @export var units_parent: Node2D      # where new units are placed in the scene tree
 @export var rooms: Node              # tells us which beds and crop beds are in working rooms
 @export var dispatcher: Node         # hands out work; every new troop gets a link to it
+@export var raider_scene: PackedScene
+@export var fog: Node2D             # raiders hide in it, and debug raiders appear on seen ground
 
 var mana := 100
 var food := 20
@@ -155,6 +163,25 @@ func receive_item(item: Dictionary) -> void:
 			treasure += 1
 		"lore":
 			lore_found.emit(LORE_TEXTS[item["lore_index"] % LORE_TEXTS.size()])
+
+
+## Debug: drops a raider on a random seen floor tile far enough from the core. Returns false if none fits.
+func spawn_raider() -> bool:
+	var spots: Array[Vector2i] = []
+	for x in grid.GRID_WIDTH:
+		for y in grid.GRID_HEIGHT:
+			var tile := Vector2i(x, y)
+			if grid.is_floor(tile) and fog.is_known(tile) and tile.distance_to(grid.START_CENTER) >= RAIDER_MIN_DISTANCE:
+				spots.append(tile)
+	if spots.is_empty():
+		return false
+	var raider: Node2D = raider_scene.instantiate()
+	raider.grid = grid
+	raider.fog = fog
+	raider.set_stats(RAIDER_STATS)
+	raider.position = grid.tile_to_screen(spots.pick_random())
+	units_parent.add_child(raider)
+	return true
 
 
 func troop_count() -> int:

@@ -12,6 +12,7 @@
 [ext_resource type="Script" path="res://scripts/fog.gd" id="10_fog"]
 [ext_resource type="Script" path="res://scripts/job_dispatcher.gd" id="11_jobs"]
 [ext_resource type="Script" path="res://scripts/roster.gd" id="12_roster"]
+[ext_resource type="PackedScene" path="res://Scenes/raider.tscn" id="13_raiderscene"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -23,13 +24,15 @@ script = ExtResource("10_fog")
 grid = NodePath("../Grid")
 rooms = NodePath("../Rooms")
 
-[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms", "dispatcher")]
+[node name="Dungeon" type="Node" parent="." node_paths=PackedStringArray("grid", "units_parent", "rooms", "dispatcher", "fog")]
 script = ExtResource("5_dungeon")
 grid = NodePath("../Grid")
 unit_scene = ExtResource("6_unitscene")
 units_parent = NodePath("..")
 rooms = NodePath("../Rooms")
 dispatcher = NodePath("../JobDispatcher")
+raider_scene = ExtResource("13_raiderscene")
+fog = NodePath("../Fog")
 
 [node name="JobDispatcher" type="Node" parent="." node_paths=PackedStringArray("grid", "fog", "rooms")]
 script = ExtResource("11_jobs")
@@ -249,3 +252,10 @@ layout_mode = 2
 [node name="Rows" type="VBoxContainer" parent="UI/RosterPanel/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="DebugRaiderButton" type="Button" parent="UI"]
+offset_left = 270.0
+offset_top = 130.0
+offset_right = 470.0
+offset_bottom = 170.0
+text = "Debug: spawn raider"

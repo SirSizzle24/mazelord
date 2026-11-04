@@ -64,6 +64,11 @@ func is_known(tile: Vector2i) -> bool:
 	return not fog_enabled or memory.has(tile) or visible_tiles.has(tile)
 
 
+## True if a troop can see this tile right now (always, with the fog off). Raiders use it to hide.
+func is_in_sight(tile: Vector2i) -> bool:
+	return not fog_enabled or visible_tiles.has(tile)
+
+
 ## Debug: hides or shows the fog. With it off, every tile counts as known.
 func set_fog_enabled(enabled: bool) -> void:
 	fog_enabled = enabled

@@ -31,6 +31,7 @@ func _ready() -> void:
 	$SummonRoundheadButton.pressed.connect(func(): dungeon.summon("roundhead"))
 	$DebugManaButton.pressed.connect(func(): dungeon.add_mana(100))
 	$DebugFogButton.toggled.connect(fog.set_fog_enabled)  # pressed = fog on
+	$DebugRaiderButton.pressed.connect(func(): dungeon.spawn_raider())
 	dungeon.lore_found.connect(_on_lore_found)
 	lore_label.visible = false
 
