@@ -1,12 +1,18 @@
 extends "res://scripts/fighter.gd"
 ## A troop: a colored circle that walks freely along a navigation path.
 ## Combat (health, attacking raiders in range, being downed) comes from fighter.gd.
+## Downed troops are injured: they die if the death timer runs out, unless they're on mycelium,
+## where they heal. Workers carry injured troops to mycelium (rescues come before other work).
 ## Workers dig marked rock and build blueprints. The job dispatcher hands out the work; a worker
 ## tells it when it's free.
 
 const SPEED := 200.0  # pixels per second
 const RADIUS := 20.0
 const DIG_TIME := 1.5  # seconds to dig one tile (build time lives on the grid)
+const DEATH_TIME := 60.0  # seconds an injured troop survives off mycelium
+const HEAL_TIME := 20.0  # seconds on mycelium for an injured troop to get back up
+const RECOVERED_HEALTH := 0.5  # share of full health it gets back up with
+const MYCELIUM_REGEN := 2.0  # health per second a hurt (but standing) fungus regains on mycelium
 
 @export var grid: Node2D
 @export var start_tile := Vector2i(30, 30)
@@ -27,6 +33,11 @@ var job: Dictionary = {}  # the current job ({"kind", "tile", "furnishing"}), or
 var job_progress := 0.0  # seconds spent digging the current tile (build progress lives on the furnishing)
 var unreachable: Dictionary = {}  # job tiles this worker couldn't reach; skipped until the map changes
 var unreachable_version := -1  # the grid's nav_version when unreachable was last cleared
+
+var death_time_left := 0.0  # while injured
+var heal_time := 0.0  # seconds spent healing on mycelium while injured
+var carried_by: Node2D = null  # the worker carrying this injured troop, or null
+var rescuer: Node2D = null  # the worker on its way to rescue it, or null
 
 
 ## Called by the dungeon before the unit enters the scene.
@@ -58,6 +69,13 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(-30, -RADIUS - 6.0), "%d-%d" % [flight, element],
 			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
 	_draw_combat(RADIUS)
+	if downed:
+		if grid.has_mycelium(get_tile()):
+			# Healing: a green ring fills up.
+			draw_arc(Vector2.ZERO, RADIUS + 6.0, -PI / 2.0, -PI / 2.0 + TAU * heal_time / HEAL_TIME, 32, Color(0.4, 0.95, 0.4), 3.0)
+		else:
+			# Dying: a red ring shrinks as time runs out.
+			draw_arc(Vector2.ZERO, RADIUS + 6.0, -PI / 2.0, -PI / 2.0 + TAU * death_time_left / DEATH_TIME, 32, Color(0.95, 0.25, 0.25), 3.0)
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		# A carried item rides above the troop.
 		draw_circle(Vector2(0, -RADIUS - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
@@ -69,7 +87,7 @@ func _draw() -> void:
 
 ## How far along the current job is, from 0 to 1. Hauling shows no ring.
 func _job_fraction() -> float:
-	if job.is_empty() or job["kind"] == "haul":
+	if job.is_empty() or job["kind"] == "haul" or job["kind"] == "rescue":
 		return 0.0
 	if job["kind"] == "build":
 		return job["furnishing"]["progress"] / grid.BUILD_TIME
@@ -117,7 +135,7 @@ func has_failed_to_reach(some_job: Dictionary) -> bool:
 ## True if a closer free worker may take this worker's job: it's still walking there (no progress
 ## to lose), it isn't carrying anything, and the player didn't assign it directly ("manual").
 func can_be_taken_over() -> bool:
-	if job.is_empty() or path.is_empty() or job.get("manual", false):
+	if job.is_empty() or path.is_empty() or job.get("manual", false) or job["kind"] == "rescue":
 		return false
 	return not (job["kind"] == "haul" and job["carrying"])
 
@@ -173,11 +191,16 @@ func start_working(tapped: Vector2i) -> void:
 func _take_job(new_job: Dictionary) -> bool:
 	job = new_job
 	job_progress = 0.0
-	grid.claimed[job["tile"]] = self
+	if job["kind"] == "rescue":
+		job["patient"].rescuer = self  # a rescue is claimed on the patient, not a tile
+	else:
+		grid.claimed[job["tile"]] = self
 
-	# Hauling: walk onto the item's tile. Digging and building: work from the nearest side.
+	# Hauling: walk onto the item's tile. Rescuing: walk to the patient. Otherwise: the nearest side.
 	var reached: bool
-	if job["kind"] == "haul":
+	if job["kind"] == "rescue":
+		reached = _walk_to(job["patient"].position)
+	elif job["kind"] == "haul":
 		reached = _walk_to(grid.tile_to_screen(job["tile"]))
 	else:
 		reached = _walk_to_nearest(grid.work_spots(job))
@@ -196,6 +219,13 @@ func _stop_working() -> void:
 func _release_job() -> void:
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		_put_down(job["item"])  # never lose an item: interrupted haulers put it down where they stand
+	if not job.is_empty() and job["kind"] == "rescue":
+		var patient: Node2D = job["patient"]
+		if is_instance_valid(patient):
+			if patient.carried_by == self:
+				patient.carried_by = null  # set the patient down here
+			if patient.rescuer == self:
+				patient.rescuer = null
 	if not job.is_empty() and grid.claimed.get(job["tile"]) == self:
 		grid.claimed.erase(job["tile"])
 	job = {}
@@ -254,6 +284,33 @@ func _haul_step() -> void:
 	dispatcher.request()
 
 
+## Called when a rescuer stops walking: either it just reached the patient, or it reached mycelium.
+func _rescue_step() -> void:
+	var patient: Node2D = job["patient"]
+	if not job["carrying"]:
+		patient.carried_by = self
+		job["carrying"] = true
+		if not _walk_to(grid.tile_to_screen(job["drop"])):
+			_release_job()  # can't get there; releasing sets the patient down here
+			dispatcher.request()
+		return
+	# At the mycelium: set the patient down to heal.
+	patient.carried_by = null
+	patient.position = position
+	job["carrying"] = false
+	_release_job()
+	queue_redraw()
+	dispatcher.request()
+
+
+## True if the current job still makes sense. Rescues check the patient; everything else asks the grid.
+func _job_still_exists() -> bool:
+	if job["kind"] == "rescue":
+		var patient: Node2D = job["patient"]
+		return is_instance_valid(patient) and patient.downed
+	return grid.job_still_exists(job)
+
+
 ## Puts an item on the floor here, or on the nearest free floor tile if this one already has one.
 func _put_down(item: Dictionary) -> void:
 	var here := get_tile()
@@ -277,20 +334,66 @@ func _path_length(points: PackedVector2Array) -> float:
 	return total
 
 
-## A downed troop drops what it's doing. Injuries and recovery come in a later draft.
+## A downed troop is injured: it drops what it's doing, and its death timer starts.
 func _on_downed() -> void:
 	_stop_working()
 	path = PackedVector2Array()
 	set_selected(false)
+	death_time_left = DEATH_TIME
+	heal_time = 0.0
+	dungeon.on_troop_injured()
+
+
+## Injured, each frame: carried along, healing on mycelium, or running out of time.
+func _process_injured(delta: float) -> void:
+	if carried_by != null:
+		if not is_instance_valid(carried_by):
+			carried_by = null
+		else:
+			position = carried_by.position + Vector2(0, -RADIUS)  # riding on the rescuer
+			return
+	if grid.has_mycelium(get_tile()):
+		heal_time += delta
+		if heal_time >= HEAL_TIME:
+			_recover()
+	else:
+		death_time_left -= delta
+		if death_time_left <= 0.0:
+			_die()
+			return
+	queue_redraw()  # the healing or dying ring changes every frame
+
+
+func _recover() -> void:
+	downed = false
+	health = max_health * RECOVERED_HEALTH
+	dungeon.on_troop_healed()
+	queue_redraw()
+	if can_dig:
+		dispatcher.request()
+
+
+func _die() -> void:
+	dungeon.on_troop_died(type_id, false)  # no troop has a name yet; fame comes later
+	remove_from_group("units")  # leaves the troop count, the roster and the dispatcher right away
+	queue_free()
 
 
 func _process(delta: float) -> void:
 	if downed:
+		_process_injured(delta)
 		return
 	_fight(delta)  # attacks any raider in range, even while walking
+	if health < max_health and grid.has_mycelium(get_tile()):
+		health = min(health + MYCELIUM_REGEN * delta, max_health)  # mycelium mends hurt fungi too
+		queue_redraw()
+
+	# A rescuer carries its patient along.
+	if not job.is_empty() and job["kind"] == "rescue" and job["carrying"] and is_instance_valid(job["patient"]):
+		job["patient"].position = position + Vector2(0, -RADIUS)
 
 	# The player may have cancelled this job (unmarked the rock or removed the blueprint).
-	if not job.is_empty() and not grid.job_still_exists(job):
+	if not job.is_empty() and not _job_still_exists():
 		_release_job()
 		path = PackedVector2Array()  # stop walking to it
 		queue_redraw()
@@ -310,6 +413,9 @@ func _process(delta: float) -> void:
 
 	if job["kind"] == "haul":
 		_haul_step()
+		return
+	if job["kind"] == "rescue":
+		_rescue_step()
 		return
 
 	queue_redraw()  # update the progress ring

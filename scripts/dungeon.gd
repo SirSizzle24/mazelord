@@ -32,6 +32,7 @@ const FURNISHINGS := {
 	"rot_pit": {"name": "Rot pit", "size": Vector2i(2, 2), "cost": 20, "color": Color(0.30, 0.35, 0.20)},
 	"mana_tap": {"name": "Mana tap", "size": Vector2i(1, 1), "cost": 25, "color": Color(0.55, 0.85, 1.0),
 		"needs_deposit": true},
+	"mycelium_source": {"name": "Mycelium source", "size": Vector2i(1, 1), "cost": 30, "color": Color(0.70, 0.55, 0.85)},
 	"door": {"name": "Door", "size": Vector2i(1, 1), "cost": 5, "color": Color(0.50, 0.30, 0.15), "blocks": false},
 }
 

@@ -47,6 +47,10 @@ const TROOP_LAYER := 1
 const RAIDER_LAYER := 2
 const DOOR_HEALTH := 60.0
 
+const MYCELIUM_COLOR := Color(0.70, 0.55, 0.85, 0.45)  # drawn over the floor, see-through
+const MYCELIUM_SPREAD_TIME := 1.5  # seconds for each source to spread onto one more tile
+const MYCELIUM_RADIUS := 4.0  # how far mycelium spreads from its source, in tiles
+
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
 
@@ -60,6 +64,8 @@ var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
 var deposits: Dictionary = {}  # mana deposit tiles (used as a set)
 var lairs: Dictionary = {}  # monster lair tiles (used as a set)
+var mycelium: Dictionary = {}  # floor tiles covered in mycelium (used as a set); heals fungi
+var mycelium_timer := 0.0
 var edge_exits: Array[Vector2i] = []  # where tunnels lead off toward the map edge; raiders enter here
 var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
@@ -312,7 +318,12 @@ func _connected_floor(start: Vector2i, seen: Dictionary) -> Array[Vector2i]:
 	return cave
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	mycelium_timer += delta
+	if mycelium_timer >= MYCELIUM_SPREAD_TIME:
+		mycelium_timer -= MYCELIUM_SPREAD_TIME
+		_spread_mycelium()
+
 	# Rebuild at most once per frame, so dragging across many tiles costs one rebuild.
 	# Wait until the navigation server has synced its map at least once (iteration 0 means
 	# not yet); a mesh handed over before then is lost, which broke the starting room.
@@ -353,6 +364,59 @@ func unmark(tile: Vector2i) -> void:
 	if marked.erase(tile):
 		queue_redraw()
 		marks_changed.emit()
+
+
+## True if this tile is covered in mycelium.
+func has_mycelium(tile: Vector2i) -> bool:
+	return mycelium.has(tile)
+
+
+## Each finished mycelium source spreads onto one more floor tile: the closest open tile to it that
+## touches mycelium already, out to MYCELIUM_RADIUS. So it grows outward from the source.
+func _spread_mycelium() -> void:
+	for furnishing in furnishings:
+		if furnishing["id"] != "mycelium_source" or not furnishing["built"]:
+			continue
+		var source: Vector2i = furnishing["origin"]
+		var best: Vector2i = NO_TILE
+		var best_distance := INF
+		var reach := ceili(MYCELIUM_RADIUS)
+		for dx in range(-reach, reach + 1):
+			for dy in range(-reach, reach + 1):
+				var tile := source + Vector2i(dx, dy)
+				var distance := Vector2(dx, dy).length()
+				if distance > MYCELIUM_RADIUS or distance >= best_distance:
+					continue
+				if not is_floor(tile) or mycelium.has(tile) or not _touches_mycelium(tile, source):
+					continue
+				best = tile
+				best_distance = distance
+		if best != NO_TILE:
+			mycelium[best] = true
+			queue_redraw()
+
+
+func _touches_mycelium(tile: Vector2i, source: Vector2i) -> bool:
+	for offset in NEIGHBORS:
+		var next: Vector2i = tile + offset
+		if next == source or mycelium.has(next):
+			return true
+	return false
+
+
+## The closest mycelium tile to a point that isn't under a blocking furnishing, or NO_TILE.
+## Rescuers carry injured troops here.
+func nearest_free_mycelium(from: Vector2) -> Vector2i:
+	var best: Vector2i = NO_TILE
+	var best_distance := INF
+	for tile in mycelium:
+		if occupied.has(tile) and occupied[tile]["blocks"]:
+			continue
+		var distance := from.distance_to(tile_to_screen(tile))
+		if distance < best_distance:
+			best = tile
+			best_distance = distance
+	return best
 
 
 ## True if a finished door stands on this tile. Doors divide rooms.
@@ -588,6 +652,10 @@ func _draw() -> void:
 			var outline := shape.duplicate()
 			outline.append(shape[0])  # back to the first corner to close the shape
 			draw_polyline(outline, LINE_COLOR, 1.0)
+
+	# Mycelium over the floor.
+	for tile in mycelium:
+		draw_colored_polygon(diamond(tile), MYCELIUM_COLOR)
 
 	# Furnishings on top of the floor: see-through until built, solid once built.
 	for furnishing in furnishings:

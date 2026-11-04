@@ -8,6 +8,9 @@ const INTERVAL := 0.5  # seconds between regular checks; a free worker can also 
 ## at most this share of the other worker's distance. The margin stops two nearly equal workers
 ## from swapping a job back and forth ("hysteresis": demand a clear advantage before switching).
 const TAKEOVER_MARGIN := 0.75
+## Rescues come before all other work: a life is on the clock. Taken off a rescue's distance, so
+## any rescue is "closer" than any other job.
+const RESCUE_PRIORITY := 100000.0
 
 @export var grid: Node2D
 @export var fog: Node2D
@@ -44,6 +47,22 @@ func _haul_jobs() -> Array:
 	return jobs
 
 
+## A rescue job for every injured troop that isn't on mycelium and has nobody coming for it,
+## as long as there's mycelium somewhere to carry it to.
+func _rescue_jobs() -> Array:
+	var jobs: Array = []
+	for unit in get_tree().get_nodes_in_group("units"):
+		var has_rescuer: bool = unit.rescuer != null and is_instance_valid(unit.rescuer)
+		if not unit.downed or has_rescuer or grid.has_mycelium(unit.get_tile()):
+			continue
+		var drop: Vector2i = grid.nearest_free_mycelium(unit.position)
+		if drop == grid.NO_TILE:
+			continue  # no mycelium anywhere
+		jobs.append({"kind": "rescue", "tile": unit.get_tile(), "furnishing": {}, "position": unit.position,
+			"patient": unit, "drop": drop, "carrying": false})
+	return jobs
+
+
 ## Jobs other workers are still walking to, which a closer free worker could take over.
 ## Each carries a "holder": the worker who has it now.
 func _takeover_jobs() -> Array:
@@ -70,7 +89,7 @@ func _dispatch() -> void:
 			idle.append(unit)
 	if idle.is_empty():
 		return
-	var jobs: Array = grid.open_jobs() + _haul_jobs() + _takeover_jobs()
+	var jobs: Array = grid.open_jobs() + _haul_jobs() + _takeover_jobs() + _rescue_jobs()
 
 	# Greedy matching: find the closest idle worker and open job anywhere, pair them, and repeat.
 	while not idle.is_empty() and not jobs.is_empty():
@@ -82,6 +101,8 @@ func _dispatch() -> void:
 				if worker.has_failed_to_reach(job):
 					continue
 				var distance: float = worker.position.distance_to(job["position"])
+				if job["kind"] == "rescue":
+					distance -= RESCUE_PRIORITY
 				if job.has("holder"):
 					var holder_distance: float = job["holder"].position.distance_to(job["position"])
 					if distance > holder_distance * TAKEOVER_MARGIN:
