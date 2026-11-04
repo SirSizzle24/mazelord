@@ -54,6 +54,7 @@ var occupied: Dictionary = {}  # tile -> the furnishing covering it
 var claimed: Dictionary = {}  # job tile -> the worker doing it, so two workers don't take the same job
 var deposits: Dictionary = {}  # mana deposit tiles (used as a set)
 var lairs: Dictionary = {}  # monster lair tiles (used as a set)
+var edge_exits: Array[Vector2i] = []  # where tunnels lead off toward the map edge; raiders enter here
 var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
@@ -139,6 +140,7 @@ func _generate_caves() -> void:
 		var from: Vector2 = chambers[rng.randi_range(0, chambers.size() - 1)]
 		var edge_point := Vector2(rng.randi_range(3, GRID_WIDTH - 4), [3, GRID_HEIGHT - 4][rng.randi_range(0, 1)])
 		_carve_tunnel(from, edge_point, rng)
+		edge_exits.append(Vector2i(roundi(edge_point.x), roundi(edge_point.y)))
 
 	# Sealed pockets: small caves anywhere in the rock, not joined to the network.
 	for _n in POCKET_COUNT:

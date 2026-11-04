@@ -7,6 +7,7 @@ const SHOW_DEBUG_STATS := true
 
 @export var dungeon: Node
 @export var fog: Node2D
+@export var raids: Node
 
 @onready var mana_label: Label = $ManaLabel
 @onready var food_label: Label = $FoodLabel
@@ -32,6 +33,7 @@ func _ready() -> void:
 	$DebugManaButton.pressed.connect(func(): dungeon.add_mana(100))
 	$DebugFogButton.toggled.connect(fog.set_fog_enabled)  # pressed = fog on
 	$DebugRaiderButton.pressed.connect(func(): dungeon.spawn_raider())
+	$DebugRaidNowButton.pressed.connect(func(): raids.raid_now())
 	dungeon.lore_found.connect(_on_lore_found)
 	lore_label.visible = false
 

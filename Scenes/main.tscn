@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/job_dispatcher.gd" id="11_jobs"]
 [ext_resource type="Script" path="res://scripts/roster.gd" id="12_roster"]
 [ext_resource type="PackedScene" path="res://Scenes/raider.tscn" id="13_raiderscene"]
+[ext_resource type="Script" path="res://scripts/raids.gd" id="14_raids"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -39,6 +40,15 @@ script = ExtResource("11_jobs")
 grid = NodePath("../Grid")
 fog = NodePath("../Fog")
 rooms = NodePath("../Rooms")
+
+[node name="Raids" type="Node" parent="." node_paths=PackedStringArray("dungeon", "grid", "fog", "units_parent", "raid_label")]
+script = ExtResource("14_raids")
+dungeon = NodePath("../Dungeon")
+grid = NodePath("../Grid")
+fog = NodePath("../Fog")
+raider_scene = ExtResource("13_raiderscene")
+units_parent = NodePath("..")
+raid_label = NodePath("../UI/RaidLabel")
 
 [node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
 script = ExtResource("9_rooms")
@@ -78,10 +88,11 @@ fog = NodePath("../Fog")
 script = ExtResource("2_bo1nx")
 grid = NodePath("../Grid")
 
-[node name="UI" type="CanvasLayer" parent="." unique_id=100359164 node_paths=PackedStringArray("dungeon", "fog")]
+[node name="UI" type="CanvasLayer" parent="." unique_id=100359164 node_paths=PackedStringArray("dungeon", "fog", "raids")]
 script = ExtResource("7_hud")
 dungeon = NodePath("../Dungeon")
 fog = NodePath("../Fog")
+raids = NodePath("../Raids")
 
 [node name="DigButton" type="Button" parent="UI" unique_id=996881546]
 offset_left = 40.0
@@ -259,3 +270,18 @@ offset_top = 130.0
 offset_right = 470.0
 offset_bottom = 170.0
 text = "Debug: spawn raider"
+
+[node name="RaidLabel" type="Label" parent="UI"]
+offset_left = 430.0
+offset_top = 95.0
+offset_right = 930.0
+offset_bottom = 121.0
+horizontal_alignment = 1
+text = "Next raid"
+
+[node name="DebugRaidNowButton" type="Button" parent="UI"]
+offset_left = 480.0
+offset_top = 130.0
+offset_right = 640.0
+offset_bottom = 170.0
+text = "Debug: raid now"
