@@ -41,6 +41,12 @@ const FEATURE_MIN_DISTANCE := 12  # deposits and lairs stay at least this far fr
 const RUIN_COUNT := 3  # small sealed rooms hidden in the rock, holding items
 const ITEM_KINDS := ["mana_cache", "food_cache", "treasure", "lore"]
 
+# Navigation layers: troops and raiders walk on different shapes, because doors are open for troops
+# but closed to raiders, who must break them down.
+const TROOP_LAYER := 1
+const RAIDER_LAYER := 2
+const DOOR_HEALTH := 60.0
+
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
 
@@ -58,7 +64,8 @@ var edge_exits: Array[Vector2i] = []  # where tunnels lead off toward the map ed
 var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
-var nav_region := NavigationRegion2D.new()  # holds the walkable shape for units
+var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
+var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 var nav_version := 0  # goes up with every rebuild, so units can tell the walkable shape changed
 
@@ -70,7 +77,10 @@ func _ready() -> void:
 			column.append(Tile.ROCK)
 		tiles.append(column)
 
+	nav_region.navigation_layers = TROOP_LAYER
+	raider_region.navigation_layers = RAIDER_LAYER
 	add_child(nav_region)
+	add_child(raider_region)
 	_generate_caves()
 
 	# A small pre-dug starting room in the middle of the map, as the onboarding design calls for.
@@ -471,6 +481,9 @@ func add_build_progress(furnishing: Dictionary, seconds: float) -> bool:
 		nav_dirty = true  # the walkable shape now needs a hole here
 	if furnishing["progress"] >= BUILD_TIME:
 		furnishing["built"] = true
+		if furnishing["id"] == "door":
+			furnishing["health"] = DOOR_HEALTH
+			nav_dirty = true  # a finished door closes the raiders' shape
 		queue_redraw()
 		layout_changed.emit()
 		return true
@@ -529,6 +542,17 @@ func dig(tile: Vector2i) -> void:
 func rebuild_navigation() -> void:
 	var start_time := Time.get_ticks_usec()
 
+	nav_region.navigation_polygon = _bake_walkable(false)
+	raider_region.navigation_polygon = _bake_walkable(true)
+	nav_version += 1
+
+	var elapsed_ms := (Time.get_ticks_usec() - start_time) / 1000.0
+	print("Navigation rebuilt in %.2f ms" % elapsed_ms)  # temporary: measuring the cost
+
+
+## Builds a walkable shape from every floor tile, minus solid furnishings, shrunk by UNIT_RADIUS so
+## units keep clear of rock. With doors_closed, finished doors are cut out too (the raiders' shape).
+func _bake_walkable(doors_closed: bool) -> NavigationPolygon:
 	var source := NavigationMeshSourceGeometryData2D.new()
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
@@ -536,18 +560,23 @@ func rebuild_navigation() -> void:
 				source.add_traversable_outline(diamond(Vector2i(x, y)))
 	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
 	for furnishing in furnishings:
-		if furnishing["solid"]:
+		var closed_door: bool = doors_closed and furnishing["id"] == "door" and furnishing["built"]
+		if furnishing["solid"] or closed_door:
 			for tile in footprint(furnishing["origin"], furnishing["size"]):
 				source.add_obstruction_outline(diamond(tile))
-
 	var nav_polygon := NavigationPolygon.new()
 	nav_polygon.agent_radius = UNIT_RADIUS
 	NavigationServer2D.bake_from_source_geometry_data(nav_polygon, source)
-	nav_region.navigation_polygon = nav_polygon
-	nav_version += 1
+	return nav_polygon
 
-	var elapsed_ms := (Time.get_ticks_usec() - start_time) / 1000.0
-	print("Navigation rebuilt in %.2f ms" % elapsed_ms)  # temporary: measuring the cost
+
+## Raiders hit a door. At zero health it's destroyed (no refund), and both walkable shapes update.
+func damage_door(door: Dictionary, amount: float) -> void:
+	door["health"] = door.get("health", DOOR_HEALTH) - amount
+	if door["health"] <= 0.0:
+		remove_furnishing(door)
+		nav_dirty = true  # the raiders' shape opens up here
+	queue_redraw()
 
 
 func _draw() -> void:
@@ -567,6 +596,11 @@ func _draw() -> void:
 			color.a = 0.35
 		for tile in footprint(furnishing["origin"], furnishing["size"]):
 			draw_colored_polygon(diamond(tile), color)
+		# A door under attack shows its health.
+		if furnishing["id"] == "door" and furnishing.get("health", DOOR_HEALTH) < DOOR_HEALTH:
+			var spot := tile_to_screen(furnishing["origin"]) + Vector2(-30, -10)
+			draw_rect(Rect2(spot, Vector2(60, 6)), Color(0.2, 0.2, 0.2))
+			draw_rect(Rect2(spot, Vector2(60 * furnishing["health"] / DOOR_HEALTH, 6)), Color(0.95, 0.6, 0.2))
 
 	# Items lying on the floor: a small diamond in the middle of the tile.
 	for tile in items:

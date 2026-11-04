@@ -1,6 +1,7 @@
 extends "res://scripts/fighter.gd"
-## A raider. Attacking, it heads for your dungeon's core, stopping to fight any troop in its way and
-## digging through rock (slowly) where there's no open path. Retreating, it heads back to where it
+## A raider. Attacking, it heads for your dungeon's core, stopping to fight any troop in its way.
+## Raiders walk on their own walkable shape where doors are closed: when a door is what blocks the
+## way, they bash it down; only when rock blocks it do they dig (slowly). Retreating, it heads back to where it
 ## came in and leaves. Only shows while one of your troops can see it.
 
 const SPEED := 150.0  # pixels per second
@@ -19,6 +20,8 @@ var path: PackedVector2Array = []
 var repath_time_left := 0.0
 var dig_tile := Vector2i(-1, -1)  # the rock it's digging, or (-1, -1)
 var dig_time_left := 0.0
+var door: Dictionary = {}  # the door it's breaking down, or empty
+var bash_cooldown := 0.0
 
 
 func _ready() -> void:
@@ -30,6 +33,7 @@ func _ready() -> void:
 func retreat() -> void:
 	retreating = true
 	dig_tile = grid.NO_TILE
+	door = {}
 	repath_time_left = 0.0
 
 
@@ -63,8 +67,7 @@ func _process(delta: float) -> void:
 	repath_time_left -= delta
 	if repath_time_left <= 0.0:
 		repath_time_left = REPATH_TIME
-		var map: RID = get_world_2d().navigation_map
-		path = NavigationServer2D.map_get_path(map, position, goal, true)  # gets as close as it can
+		_plan(goal)
 
 	if not path.is_empty():
 		position = position.move_toward(path[0], SPEED * delta)
@@ -72,9 +75,63 @@ func _process(delta: float) -> void:
 			path.remove_at(0)
 		return
 
-	# Out of path. If it still isn't at the core, the way is blocked by rock: dig toward the core.
-	if not retreating and position.distance_to(goal) > ARRIVE_DISTANCE:
+	# Out of path and short of the goal: break the door in the way, or dig if it's rock.
+	if not door.is_empty():
+		_bash_door(delta)
+	elif not retreating and position.distance_to(goal) > ARRIVE_DISTANCE:
 		_start_digging_toward(goal)
+
+
+## Plans the way to the goal. If doors are what stop the raiders' own path, it heads for the first
+## door on the troops' path (which treats doors as open) to break it down.
+func _plan(goal: Vector2) -> void:
+	var map: RID = get_world_2d().navigation_map
+	var own_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true, grid.RAIDER_LAYER)
+	door = {}
+	if _reaches(own_path, goal):
+		path = own_path
+		return
+	var open_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true, grid.TROOP_LAYER)
+	if _reaches(open_path, goal):
+		door = _first_door_on(open_path)
+	if door.is_empty():
+		path = own_path  # rock in the way: get as close as it can, then dig
+	else:
+		# Walk up to the door; its tile isn't walkable for raiders, so the path stops beside it.
+		var door_spot: Vector2 = grid.tile_to_screen(door["origin"])
+		path = NavigationServer2D.map_get_path(map, position, door_spot, true, grid.RAIDER_LAYER)
+
+
+func _reaches(some_path: PackedVector2Array, goal: Vector2) -> bool:
+	return not some_path.is_empty() and some_path[some_path.size() - 1].distance_to(goal) < ARRIVE_DISTANCE
+
+
+## The first finished door along a path, checked every 30 pixels so no tile is skipped. Empty if none.
+func _first_door_on(some_path: PackedVector2Array) -> Dictionary:
+	var previous := position
+	for point in some_path:
+		var steps: int = max(ceili(previous.distance_to(point) / 30.0), 1)
+		for i in range(1, steps + 1):
+			var tile: Vector2i = grid.screen_to_tile(previous.lerp(point, float(i) / steps))
+			if grid.is_door(tile):
+				return grid.furnishing_at(tile)
+		previous = point
+	return {}
+
+
+## Hits the door in its way, using the raider's own damage and attack speed.
+func _bash_door(delta: float) -> void:
+	if not grid.furnishings.has(door):
+		door = {}  # already broken, by this raider or another
+		repath_time_left = 0.0
+		return
+	bash_cooldown = max(bash_cooldown - delta, 0.0)
+	if bash_cooldown == 0.0:
+		grid.damage_door(door, damage)
+		bash_cooldown = attack_interval
+		flash_at = grid.tile_to_screen(door["origin"]) - position
+		flash_time_left = FLASH_TIME
+		queue_redraw()
 
 
 ## Picks the rock tile beside it that's closest to the goal, and starts digging it.
