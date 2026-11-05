@@ -9,13 +9,16 @@ const TILE_HEIGHT := 128  # same as the width: squares turned 45°, no squash
 const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
 
 enum Tile { ROCK, FLOOR }
+## What each tile looks like on the ground layer: one placeholder texture per kind.
+enum Ground { ROCK, FLOOR, MARKED, DEPOSIT_ROCK, DEPOSIT_FLOOR, LAIR }
+
+const TileTextures = preload("res://scripts/tile_textures.gd")
 
 signal layout_changed  # sent when floor is dug or a furnishing is finished, so rooms can be re-checked
-signal marks_changed  # sent when dig marks are added or removed, so the fog can show them
+signal marks_changed(tile: Vector2i)  # sent when a dig mark is added or removed, so the fog can show it
 
 const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
-const LINE_COLOR := Color(0.2, 0.2, 0.2)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
 const DEPOSIT_COLOR := Color(0.30, 0.75, 0.95)  # a mana deposit, in rock or on open floor
 const LAIR_COLOR := Color(0.80, 0.15, 0.15)  # a monster lair (a marker until combat exists)
@@ -75,6 +78,7 @@ var edge_exits: Array[Vector2i] = []  # where tunnels lead off toward the map ed
 var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
+var ground := TileMapLayer.new()  # draws rock and floor; only changed cells are updated
 var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
 var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
@@ -88,6 +92,16 @@ func _ready() -> void:
 			column.append(Tile.ROCK)
 		tiles.append(column)
 
+	ground.tile_set = TileTextures.build(ground_colors())
+	ground.show_behind_parent = true  # drawn under this node's own drawing (furnishings, items)
+	add_child(ground)
+	# Line the layer's cells up exactly with tile_to_screen(), whatever offset Godot's layout uses.
+	ground.position = tile_to_screen(Vector2i.ZERO) - ground.map_to_local(Vector2i.ZERO)
+	# Check the layout really matches tile_to_screen() away from the origin too.
+	var probe := Vector2i(5, 3)
+	if (ground.position + ground.map_to_local(probe)).distance_to(tile_to_screen(probe)) > 1.0:
+		push_warning("Ground tiles don't line up with tile_to_screen(): check the TileSet layout")
+
 	nav_region.navigation_layers = TROOP_LAYER
 	raider_region.navigation_layers = RAIDER_LAYER
 	add_child(nav_region)
@@ -99,6 +113,10 @@ func _ready() -> void:
 		for y in range(START_CENTER.y - 1, START_CENTER.y + 2):
 			dig(Vector2i(x, y))
 			starting_room.append(Vector2i(x, y))
+
+	for x in GRID_WIDTH:
+		for y in GRID_HEIGHT:
+			_update_ground(Vector2i(x, y))  # paint the whole map once; after that only changes
 
 
 ## Carves the labyrinth: mostly solid rock, with separate chambers joined by narrow winding tunnels
@@ -411,8 +429,8 @@ func mark(tile: Vector2i, hidden: bool = false) -> void:
 		return
 	if hidden or tiles[tile.x][tile.y] == Tile.ROCK:
 		marked[tile] = true
-		queue_redraw()
-		marks_changed.emit()
+		_update_ground(tile)
+		marks_changed.emit(tile)
 
 
 func is_marked(tile: Vector2i) -> bool:
@@ -422,8 +440,8 @@ func is_marked(tile: Vector2i) -> bool:
 ## Clears a dig mark.
 func unmark(tile: Vector2i) -> void:
 	if marked.erase(tile):
-		queue_redraw()
-		marks_changed.emit()
+		_update_ground(tile)
+		marks_changed.emit(tile)
 
 
 ## True if this tile is covered in mycelium belonging to that side ("player" or "rival").
@@ -659,10 +677,11 @@ func open_jobs() -> Array:
 ## Turns a rock tile into floor. Does nothing for floor or out-of-bounds tiles.
 func dig(tile: Vector2i) -> void:
 	if marked.erase(tile):  # dug tiles are no longer waiting, even if there was no rock after all
-		queue_redraw()
-		marks_changed.emit()
+		_update_ground(tile)
+		marks_changed.emit(tile)
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
 		tiles[tile.x][tile.y] = Tile.FLOOR
+		_update_ground(tile)
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
 		layout_changed.emit()
@@ -711,16 +730,8 @@ func damage_door(door: Dictionary, amount: float) -> void:
 	queue_redraw()
 
 
+## Draws what sits on the ground. The ground itself is the TileMapLayer, drawn underneath.
 func _draw() -> void:
-	for x in GRID_WIDTH:
-		for y in GRID_HEIGHT:
-			var shape := diamond(Vector2i(x, y))
-			draw_colored_polygon(shape, _ground_color(Vector2i(x, y)))
-
-			var outline := shape.duplicate()
-			outline.append(shape[0])  # back to the first corner to close the shape
-			draw_polyline(outline, LINE_COLOR, 1.0)
-
 	# Mycelium over the floor.
 	for tile in mycelium:
 		draw_colored_polygon(diamond(tile), MYCELIUM_COLOR)
@@ -755,26 +766,35 @@ func _draw() -> void:
 				draw_colored_polygon(diamond(tile), preview_color)
 
 
-## The color a tile shows right now, counting marks and finished furnishings. The fog remembers this.
-func tile_color(tile: Vector2i) -> Color:
+## The placeholder color for each Ground kind, in enum order. The fog builds a darkened copy.
+func ground_colors() -> Array:
+	return [ROCK_COLOR, FLOOR_COLOR, MARKED_COLOR, DEPOSIT_COLOR.darkened(0.35), DEPOSIT_COLOR, LAIR_COLOR]
+
+
+## Which kind of ground a tile shows: marks first, then deposits and lairs, then rock or floor.
+func ground_kind(tile: Vector2i) -> int:
+	if marked.has(tile):
+		return Ground.MARKED
+	var rock: bool = tiles[tile.x][tile.y] == Tile.ROCK
+	if deposits.has(tile):
+		return Ground.DEPOSIT_ROCK if rock else Ground.DEPOSIT_FLOOR
+	if lairs.has(tile):
+		return Ground.LAIR
+	return Ground.ROCK if rock else Ground.FLOOR
+
+
+## The color of whatever stands on a tile, for the fog to remember: a finished furnishing, an item,
+## or nothing (fully see-through).
+func overlay_color(tile: Vector2i) -> Color:
 	if occupied.has(tile) and occupied[tile]["built"]:
 		return occupied[tile]["color"]
-	return _ground_color(tile)
-
-
-## The color of the ground itself: marks first, then deposits and lairs, then rock or floor.
-func _ground_color(tile: Vector2i) -> Color:
-	if marked.has(tile):
-		return MARKED_COLOR
-	if deposits.has(tile):
-		return DEPOSIT_COLOR if tiles[tile.x][tile.y] == Tile.FLOOR else DEPOSIT_COLOR.darkened(0.35)
-	if lairs.has(tile):
-		return LAIR_COLOR
 	if items.has(tile):
-		return ITEM_COLORS[items[tile]["kind"]]  # so the fog remembers where items lie
-	if tiles[tile.x][tile.y] == Tile.ROCK:
-		return ROCK_COLOR
-	return FLOOR_COLOR
+		return ITEM_COLORS[items[tile]["kind"]]
+	return Color(0, 0, 0, 0)
+
+
+func _update_ground(tile: Vector2i) -> void:
+	ground.set_cell(tile, 0, Vector2i(ground_kind(tile), 0))
 
 
 ## The four corners of a tile's diamond: top, right, bottom, left.

@@ -3,7 +3,9 @@ extends Node2D
 ## and can still be marked for digging. Tiles seen before show the last image you had, dimmed: changes
 ## out of sight don't appear until a troop looks again. Tiles in sight, the starting room, and finished
 ## rooms (plus the walls around them) are left clear, so the live grid shows through.
+## The fog is a TileMapLayer of darkened ground tiles, and only cells whose visibility changed are updated.
 
+const TileTextures = preload("res://scripts/tile_textures.gd")
 const SIGHT_RADIUS := 5  # tiles a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
 const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live ones
@@ -11,26 +13,60 @@ const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live o
 @export var grid: Node2D
 @export var rooms: Node
 
-var memory: Dictionary = {}  # tile -> its color when last seen
+var layer := TileMapLayer.new()
+var marked_kind := 0  # the fog's extra tile: a mark at full brightness, so your marks always show
+var memory: Dictionary = {}  # tile -> its ground kind when last seen
+var memory_overlays: Dictionary = {}  # tile -> color of what stood on it when last seen (if anything)
 var visible_tiles: Dictionary = {}  # tiles in sight right now (used as a set)
 var timer := 0.0
 var fog_enabled := true  # debug: switch the fog off to see the whole map
 
 
 func _ready() -> void:
-	grid.marks_changed.connect(queue_redraw)  # marks show through the fog, so redraw when they change
+	# The fog's tiles: every ground kind darkened, plus one bright mark.
+	var colors: Array = []
+	for color in grid.ground_colors():
+		colors.append(color.darkened(MEMORY_DARKEN))
+	marked_kind = colors.size()
+	colors.append(grid.MARKED_COLOR)
+	layer.tile_set = TileTextures.build(colors)
+	layer.show_behind_parent = true  # under the remembered furnishings this node draws
+	add_child(layer)
+	layer.position = grid.tile_to_screen(Vector2i.ZERO) - layer.map_to_local(Vector2i.ZERO)
+
+	grid.marks_changed.connect(_paint)  # marks show through the fog
 	# Only the starting room, and the rock around it, start out known. (Not every floor tile:
 	# the caves are floor too, and remembering them would reveal the whole labyrinth.)
 	for tile in grid.starting_room:
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
 				_remember(tile + Vector2i(dx, dy))
-	queue_redraw()
+	for x in grid.GRID_WIDTH:
+		for y in grid.GRID_HEIGHT:
+			_paint(Vector2i(x, y))
 
 
 func _remember(tile: Vector2i) -> void:
-	if grid.is_in_bounds(tile):
-		memory[tile] = grid.tile_color(tile)
+	if not grid.is_in_bounds(tile):
+		return
+	memory[tile] = grid.ground_kind(tile)
+	var overlay: Color = grid.overlay_color(tile)
+	if overlay.a > 0.0:
+		memory_overlays[tile] = overlay
+	else:
+		memory_overlays.erase(tile)
+
+
+## Updates one fog cell: clear if in sight; otherwise the remembered ground (dim rock if never seen),
+## or a bright mark if you've marked it.
+func _paint(tile: Vector2i) -> void:
+	if visible_tiles.has(tile):
+		layer.erase_cell(tile)
+		return
+	var kind: int = memory.get(tile, grid.Ground.ROCK)
+	if grid.is_marked(tile):
+		kind = marked_kind
+	layer.set_cell(tile, 0, Vector2i(kind, 0))
 
 
 func _process(delta: float) -> void:
@@ -53,10 +89,20 @@ func _process(delta: float) -> void:
 		if grid.is_marked(tile) and grid.is_floor(tile):
 			grid.unmark(tile)  # a mark made in the fog turned out to be on open floor
 
-	# Redraw only when what's in sight changed; redrawing 3,600 tiles for nothing is wasteful.
-	if now != visible_tiles:
-		visible_tiles = now
-		queue_redraw()
+	# Only cells that came into or went out of sight change.
+	var changed: Array = []
+	for tile in now:
+		if not visible_tiles.has(tile):
+			changed.append(tile)
+	for tile in visible_tiles:
+		if not now.has(tile):
+			changed.append(tile)
+	if changed.is_empty():
+		return
+	visible_tiles = now
+	for tile in changed:
+		_paint(tile)
+	queue_redraw()  # remembered furnishings and items may have come into or out of view
 
 
 ## True if the player has ever seen this tile, or sees it now.
@@ -107,14 +153,9 @@ func _line_clear(from: Vector2i, to: Vector2i) -> bool:
 	return true
 
 
+## Remembered furnishings and items, darkened, on top of the fog tiles.
 func _draw() -> void:
-	for x in grid.GRID_WIDTH:
-		for y in grid.GRID_HEIGHT:
-			var tile := Vector2i(x, y)
-			if visible_tiles.has(tile):
-				continue  # in sight: let the live grid show
-			# Never seen: dim rock, the same as remembered rock, so the unknown gives nothing away.
-			var remembered: Color = memory.get(tile, grid.ROCK_COLOR)
-			if grid.is_marked(tile):
-				remembered = grid.MARKED_COLOR  # your own marks always show, so you can see what you queued
+	for tile in memory_overlays:
+		if not visible_tiles.has(tile):
+			var remembered: Color = memory_overlays[tile]
 			draw_colored_polygon(grid.diamond(tile), remembered.darkened(MEMORY_DARKEN))
