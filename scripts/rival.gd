@@ -7,7 +7,7 @@ const RivalWorkerScript = preload("res://scripts/rival_worker.gd")
 const GUARDS_INSIDE := 2
 const RIVAL_WORKERS := 2
 const LOOT := ["mana_cache", "mana_cache", "food_cache", "treasure"]
-const LOOT_DISTANCE := 60.0  # how close one of your troops must get to the core
+const LOOT_DISTANCE := 90.0  # how close one of your troops must get to the core
 const MESSAGE_TIME := 6.0
 
 @export var grid: Node2D
@@ -24,12 +24,13 @@ func _ready() -> void:
 	message_label.visible = false
 	var core: Vector2 = grid.tile_to_screen(grid.rival_core)
 	for i in GUARDS_INSIDE:
-		_spawn(GuardScript, dungeon.GUARD_STATS, core + Vector2.from_angle(PI * i) * 60.0)
+		_spawn(GuardScript, dungeon.GUARD_STATS, core + Vector2.from_angle(PI * i) * 90.0)
 	for door_tile in grid.rival_doors:
-		var outside: Vector2i = door_tile + (door_tile - grid.rival_core).sign()  # just past the door
+		var door_center: Vector2i = door_tile + Vector2i(1, 1)
+		var outside: Vector2i = door_center + (door_center - grid.rival_core).sign() * grid.BLOCK  # just past the door
 		_spawn(GuardScript, dungeon.GUARD_STATS, grid.tile_to_screen(outside))
 	for i in RIVAL_WORKERS:
-		var worker := _spawn(RivalWorkerScript, dungeon.RIVAL_WORKER_STATS, core + Vector2(30.0 * i, 40.0))
+		var worker := _spawn(RivalWorkerScript, dungeon.RIVAL_WORKER_STATS, core + Vector2(45.0 * i, 60.0))
 		worker.home = worker.position
 
 

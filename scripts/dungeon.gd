@@ -10,9 +10,9 @@ signal name_earned(unit: Node2D)  # the naming panel listens, to ask for a name
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
 	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true,
-		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2},
+		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2, "radius": 20.0},
 	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false,
-		"health": 60.0, "damage": 8.0, "range": 55.0, "attack_interval": 1.0},
+		"health": 60.0, "damage": 8.0, "range": 82.0, "attack_interval": 1.0, "radius": 30.0},
 }
 ## The generic raider for the prototype. Stats are placeholders to tune.
 ## Fame: a troop earns a name when its fame reaches the threshold, which rises with each living named
@@ -23,12 +23,12 @@ const NAME_THRESHOLD_STEP := 20.0
 const NAME_PARTS := [["Mor", "Spor", "Myc", "Lum", "Gil", "Fun", "Rot", "Dam"],
 	["a", "o", "ix", "el", "ug", "wen", "ble", "ish"]]
 
-const RAIDER_STATS := {"health": 40.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
-const GUARD_STATS := {"health": 50.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
+const RAIDER_STATS := {"health": 40.0, "damage": 6.0, "range": 78.0, "attack_interval": 1.0}
+const GUARD_STATS := {"health": 50.0, "damage": 6.0, "range": 78.0, "attack_interval": 1.0}
 const RIVAL_WORKER_STATS := {"health": 25.0, "damage": 2.0, "range": 45.0, "attack_interval": 1.4}
-const RAIDER_MIN_DISTANCE := 10.0  # debug raiders appear at least this many tiles from the core
+const RAIDER_MIN_DISTANCE := 30.0  # debug raiders appear at least this many tiles from the core
 
-## Every furnishing that can be built. Size is in tiles along the grid; costs are placeholders to tune.
+## Every furnishing that can be built. Size is in blocks (3 x 3 cells) along the grid; costs are placeholders to tune.
 ## Furnishings block movement unless they say "blocks": false.
 const FURNISHINGS := {
 	"soil_bed": {"name": "Damp soil bed", "size": Vector2i(1, 2), "cost": 10, "color": Color(0.36, 0.26, 0.18)},
@@ -57,7 +57,7 @@ const ROOM_TYPES := {
 	"rotting_chamber": {"name": "Rotting chamber", "needs": ["rot_pit", "mister"]},
 }
 
-const SUMMON_TILE := Vector2i(30, 30)  # the summoning spot in the starting room (the grid's START_CENTER)
+const SUMMON_TILE := Vector2i(91, 91)  # the summoning spot in the starting room (the grid's START_CENTER)
 
 const FREE_TROOPS := 2  # troops you can have before beds are needed
 const FARM_INTERVAL := 10.0  # seconds between harvests

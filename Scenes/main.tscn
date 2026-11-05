@@ -88,12 +88,13 @@ remove_button = NodePath("../UI/RemoveButton")
 rotate_button = NodePath("../UI/RotateButton")
 place_button = NodePath("../UI/PlaceButton")
 
-[node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button", "fog")]
+[node name="DigController" type="Node2D" parent="." unique_id=1743646951 node_paths=PackedStringArray("grid", "camera", "dig_button", "fog", "fine_button")]
 script = ExtResource("2_8gbba")
 grid = NodePath("../Grid")
 camera = NodePath("../Camera")
 dig_button = NodePath("../UI/DigButton")
 fog = NodePath("../Fog")
+fine_button = NodePath("../UI/FineDigButton")
 
 [node name="Camera" type="Camera2D" parent="." unique_id=493433707 node_paths=PackedStringArray("grid")]
 script = ExtResource("2_bo1nx")
@@ -325,3 +326,11 @@ offset_bottom = 575.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.85, 0.7, 1, 1)
 text = "Rival"
+
+[node name="FineDigButton" type="Button" parent="UI"]
+offset_left = 40.0
+offset_top = 540.0
+offset_right = 200.0
+offset_bottom = 583.0
+toggle_mode = true
+text = "Fine: cells"

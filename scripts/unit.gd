@@ -6,15 +6,15 @@ extends "res://scripts/fighter.gd"
 ## Workers dig marked rock and build blueprints. The job dispatcher hands out the work; a worker
 ## tells it when it's free.
 
-const SPEED := 200.0  # pixels per second
-const RADIUS := 20.0
-const DIG_TIME := 1.5  # seconds to dig one tile (build time lives on the grid)
+const SPEED := 300.0  # pixels per second
+const DIG_TIME := 0.4  # seconds to dig one cell, so a block takes about 3.6 s (build time lives on the grid)
 const DEATH_TIME := 60.0  # seconds an injured troop survives off mycelium
 const HEAL_TIME := 20.0  # seconds on mycelium for an injured troop to get back up
 const RECOVERED_HEALTH := 0.5  # share of full health it gets back up with
 const MYCELIUM_REGEN := 2.0  # health per second a hurt (but standing) fungus regains on mycelium
 # Fame earned, per deed. Placeholders to tune.
-const FAME_PER_JOB := 1.0  # digging, building, hauling
+const FAME_PER_JOB := 1.0  # building and hauling
+const FAME_PER_DUG_CELL := 0.12  # about 1 per block dug
 const FAME_PER_RESCUE := 3.0
 const FAME_PER_DAMAGE := 0.1  # so 10 damage dealt = 1 fame
 const FAME_PER_DOWNED_RAIDER := 5.0
@@ -22,13 +22,14 @@ const FAME_FOR_SURVIVING := 5.0  # standing when a raid ends, or recovering from
 const FAME_PER_MINUTE := 1.0  # long service
 
 @export var grid: Node2D
-@export var start_tile := Vector2i(30, 30)
+@export var start_tile := Vector2i(91, 91)
 var dispatcher: Node  # set by the dungeon when summoning
 var dungeon: Node  # set by the dungeon; receives hauled items
 
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
 var can_dig := false  # workers only: digging and building
+var radius := 20.0  # set from the troop type; everyone but workers is bigger
 var roster_label := ""  # e.g. "Worker 1"; troops are unnamed until they earn fame
 var flight := 0  # which flight it's in: 1 to 5, or 0 for none
 var element := 1  # which element of its flight: 1 to 4
@@ -58,6 +59,7 @@ func setup(new_type_id: String, troop_type: Dictionary) -> void:
 	type_id = new_type_id
 	color = troop_type["color"]
 	can_dig = troop_type["can_dig"]
+	radius = troop_type["radius"]
 	set_stats(troop_type)
 
 
@@ -91,7 +93,7 @@ func _bash_rival_door(delta: float) -> void:
 	door_bash_cooldown = max(door_bash_cooldown - delta, 0.0)
 	if door_bash_cooldown > 0.0:
 		return
-	var reach: float = attack_range + grid.TILE_WIDTH / 2.0  # the door's tile is out of walking range
+	var reach: float = attack_range + grid.TILE_WIDTH * grid.BLOCK / 2.0  # the door's block is out of walking range
 	var door: Dictionary = grid.door_near(position, reach, "rival")
 	if door.is_empty():
 		return
@@ -115,31 +117,31 @@ func get_tile() -> Vector2i:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, RADIUS, color.darkened(0.5) if downed else color)
+	draw_circle(Vector2.ZERO, radius, color.darkened(0.5) if downed else color)
 	if selected:
-		draw_arc(Vector2.ZERO, RADIUS + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
+		draw_arc(Vector2.ZERO, radius + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
 	if flight > 0:
 		# Flight and element above the troop, e.g. "2-1".
-		draw_string(ThemeDB.fallback_font, Vector2(-30, -RADIUS - 6.0), "%d-%d" % [flight, element],
+		draw_string(ThemeDB.fallback_font, Vector2(-30, -radius - 6.0), "%d-%d" % [flight, element],
 			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
 	if is_named:
-		draw_string(ThemeDB.fallback_font, Vector2(-60, RADIUS + 26.0), troop_name,
+		draw_string(ThemeDB.fallback_font, Vector2(-60, radius + 26.0), troop_name,
 			HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color(1.0, 0.9, 0.5))
-	_draw_combat(RADIUS)
+	_draw_combat(radius)
 	if downed:
 		if grid.has_mycelium(get_tile()):
 			# Healing: a green ring fills up.
-			draw_arc(Vector2.ZERO, RADIUS + 6.0, -PI / 2.0, -PI / 2.0 + TAU * heal_time / HEAL_TIME, 32, Color(0.4, 0.95, 0.4), 3.0)
+			draw_arc(Vector2.ZERO, radius + 6.0, -PI / 2.0, -PI / 2.0 + TAU * heal_time / HEAL_TIME, 32, Color(0.4, 0.95, 0.4), 3.0)
 		else:
 			# Dying: a red ring shrinks as time runs out.
-			draw_arc(Vector2.ZERO, RADIUS + 6.0, -PI / 2.0, -PI / 2.0 + TAU * death_time_left / DEATH_TIME, 32, Color(0.95, 0.25, 0.25), 3.0)
+			draw_arc(Vector2.ZERO, radius + 6.0, -PI / 2.0, -PI / 2.0 + TAU * death_time_left / DEATH_TIME, 32, Color(0.95, 0.25, 0.25), 3.0)
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		# A carried item rides above the troop.
-		draw_circle(Vector2(0, -RADIUS - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
+		draw_circle(Vector2(0, -radius - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
 	var fraction := _job_fraction()
 	if fraction > 0.0 and path.is_empty():
 		# An orange ring fills up while working.
-		draw_arc(Vector2.ZERO, RADIUS + 8.0, -PI / 2.0, -PI / 2.0 + TAU * fraction, 32, Color.ORANGE, 3.0)
+		draw_arc(Vector2.ZERO, radius + 8.0, -PI / 2.0, -PI / 2.0 + TAU * fraction, 32, Color.ORANGE, 3.0)
 
 
 ## How far along the current job is, from 0 to 1. Hauling shows no ring.
@@ -307,7 +309,7 @@ func _walk_to(point: Vector2) -> bool:
 	var new_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, point, true)
 	# The server returns the closest reachable point when the target can't be reached,
 	# so check that the path really ends at the target.
-	if new_path.is_empty() or new_path[new_path.size() - 1].distance_to(point) > RADIUS:
+	if new_path.is_empty() or new_path[new_path.size() - 1].distance_to(point) > radius:
 		return false
 	path = new_path
 	return true
@@ -321,7 +323,7 @@ func _walk_to_nearest(spots: PackedVector2Array) -> bool:
 	for spot in spots:
 		var spot_on_ground: Vector2 = NavigationServer2D.map_get_closest_point(map, spot)  # snap onto walkable ground
 		var candidate: PackedVector2Array = NavigationServer2D.map_get_path(map, position, spot_on_ground, true)
-		if candidate.is_empty() or candidate[candidate.size() - 1].distance_to(spot_on_ground) > RADIUS:
+		if candidate.is_empty() or candidate[candidate.size() - 1].distance_to(spot_on_ground) > radius:
 			continue  # can't get there
 		var length := _path_length(candidate)
 		if length < best_length:
@@ -421,7 +423,7 @@ func _process_injured(delta: float) -> void:
 		if not is_instance_valid(carried_by):
 			carried_by = null
 		else:
-			position = carried_by.position + Vector2(0, -RADIUS)  # riding on the rescuer
+			position = carried_by.position + Vector2(0, -radius)  # riding on the rescuer
 			return
 	if grid.has_mycelium(get_tile()):
 		heal_time += delta
@@ -468,7 +470,7 @@ func _process(delta: float) -> void:
 
 	# A rescuer carries its patient along.
 	if not job.is_empty() and job["kind"] == "rescue" and job["carrying"] and is_instance_valid(job["patient"]):
-		job["patient"].position = position + Vector2(0, -RADIUS)
+		job["patient"].position = position + Vector2(0, -radius)
 
 	# The player may have cancelled this job (unmarked the rock or removed the blueprint).
 	if not job.is_empty() and not _job_still_exists():
@@ -509,7 +511,7 @@ func _process(delta: float) -> void:
 	# Job finished.
 	var done := job
 	_release_job()
-	add_fame(FAME_PER_JOB)
+	add_fame(FAME_PER_DUG_CELL if done["kind"] == "dig" else FAME_PER_JOB)
 	if done["kind"] == "dig":
 		grid.dig(done["tile"])
 		# Tunnel in: step straight into the freshly dug tile, then look for the next job on arrival.

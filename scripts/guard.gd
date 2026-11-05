@@ -2,10 +2,10 @@ extends "res://scripts/fighter.gd"
 ## A rival guard. Holds its post, chases your troops that come near, then returns.
 ## Downed guards don't die: rival workers carry them to the rival mycelium, where they revive.
 
-const SPEED := 140.0
-const RADIUS := 18.0
+const SPEED := 210.0
+const RADIUS := 27.0
 const COLOR := Color(0.55, 0.25, 0.70)
-const CHASE_RANGE := 220.0  # how far from its post a guard will go after your troops
+const CHASE_RANGE := 330.0  # how far from its post a guard will go after your troops
 const REPATH_TIME := 0.5
 const HEAL_TIME := 15.0  # seconds on mycelium to revive at full health
 

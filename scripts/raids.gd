@@ -54,7 +54,7 @@ func _start_raid() -> void:
 		raider.grid = grid
 		raider.fog = fog
 		raider.set_stats(dungeon.RAIDER_STATS)
-		raider.position = entry + Vector2.from_angle(TAU * i / raid_size) * 20.0  # a little apart
+		raider.position = entry + Vector2.from_angle(TAU * i / raid_size) * 30.0  # a little apart
 		raider.exit_point = entry
 		units_parent.add_child(raider)
 
@@ -70,7 +70,7 @@ func _entry_point() -> Vector2:
 		for x in grid.GRID_WIDTH:
 			for y in grid.GRID_HEIGHT:
 				var tile := Vector2i(x, y)
-				if grid.is_floor(tile) and tile.distance_to(grid.START_CENTER) > 20:
+				if grid.is_floor(tile) and tile.distance_to(grid.START_CENTER) > 60:
 					options.append(tile)
 	return grid.tile_to_screen(options.pick_random())
 

@@ -1,11 +1,15 @@
 extends Node2D
 ## The dungeon grid: stores which tiles are rock or floor, draws them as diamonds,
 ## and builds the navigation shape that units walk on.
+##
+## Naming: in the code, a "tile" is one grid cell (64 px, a sub-tile in the design). A 3 x 3 group of
+## cells, what the design calls a tile, is a "block" here. Digging, building and features snap to blocks.
 
-const GRID_WIDTH := 60
-const GRID_HEIGHT := 60
-const TILE_WIDTH := 128   # diamond width in pixels
-const TILE_HEIGHT := 128  # same as the width: squares turned 45°, no squash
+const BLOCK := 3  # cells per block side
+const GRID_WIDTH := 180  # 60 blocks
+const GRID_HEIGHT := 180
+const TILE_WIDTH := 64   # one cell's diamond width in pixels
+const TILE_HEIGHT := 64  # same as the width: squares turned 45°, no squash
 const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
 
 enum Tile { ROCK, FLOOR }
@@ -28,19 +32,20 @@ const ITEM_COLORS := {"mana_cache": Color(0.45, 0.80, 1.0), "food_cache": Color(
 # Cave generation. The map is new every game; each run prints its seed so a map can be replayed.
 const FIXED_SEED := 0  # set to a printed seed to get that exact map again (0 = new map every run)
 const CHAMBER_COUNT := 8  # open caverns spread around the map, joined by tunnels
-const CHAMBER_RADIUS := Vector2(3.0, 6.0)  # smallest and largest chamber size, in tiles
-const CHAMBER_GAP := 12.0  # least distance between chamber centers, so rock stays between them
+const CHAMBER_RADIUS := Vector2(9.0, 18.0)  # smallest and largest chamber size, in cells (3 to 6 blocks)
+const CHAMBER_GAP := 36.0  # least distance between chamber centers, so rock stays between them
 const EXTRA_LINKS := 2  # tunnels beyond the minimum, so the network has some loops
 const EDGE_TUNNELS := 2  # tunnels leading from a chamber off toward the map's edge
 const TUNNEL_WOBBLE := 0.6  # how much tunnels wind on their way, in radians
 const POCKET_COUNT := 5  # small sealed caves away from the network, found only by digging
-const MIN_POCKET := 6  # caves smaller than this many tiles are filled in as rock
-const START_CENTER := Vector2i(30, 30)
-const SAFE_RADIUS := 7  # solid rock kept around the start, so the first passage takes some digging
+const MIN_POCKET := 54  # caves smaller than this many cells (6 blocks' worth) are filled in as rock
+const START_CENTER := Vector2i(91, 91)  # the middle cell of block (30, 30)
+const SAFE_RADIUS := 21  # solid rock kept around the start, in cells, so reaching the network takes digging
+const TUNNEL_RADIUS := 1.6  # tunnels are carved about one block (3 cells) wide
 const DEPOSIT_COUNT := 8  # mana deposits scattered through caves and rock
 const LAIR_COUNT := 3  # monster lairs, placed only in larger caves
-const LAIR_MIN_CAVE := 25  # caves smaller than this many tiles don't get lairs
-const FEATURE_MIN_DISTANCE := 12  # deposits and lairs stay at least this far from the start
+const LAIR_MIN_CAVE := 225  # caves smaller than this many cells (25 blocks' worth) don't get lairs
+const FEATURE_MIN_DISTANCE := 36  # deposits and lairs stay at least this many cells from the start
 const RUIN_COUNT := 3  # small sealed rooms hidden in the rock, holding items
 const ITEM_KINDS := ["mana_cache", "food_cache", "treasure", "lore"]
 
@@ -52,8 +57,8 @@ const DOOR_HEALTH := 60.0
 const RIVAL_DOOR_COLOR := Color(0.35, 0.15, 0.40)
 
 const MYCELIUM_COLOR := Color(0.70, 0.55, 0.85, 0.45)  # drawn over the floor, see-through
-const MYCELIUM_SPREAD_TIME := 1.5  # seconds for each source to spread onto one more tile
-const MYCELIUM_RADIUS := 4.0  # how far mycelium spreads from its source, in tiles
+const MYCELIUM_SPREAD_TIME := 0.17  # seconds per cell spread (about a block every 1.5 seconds)
+const MYCELIUM_RADIUS := 12.0  # how far mycelium spreads from its source, in cells (4 blocks)
 
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
@@ -92,7 +97,7 @@ func _ready() -> void:
 			column.append(Tile.ROCK)
 		tiles.append(column)
 
-	ground.tile_set = TileTextures.build(ground_colors())
+	ground.tile_set = TileTextures.build(ground_colors(), TILE_WIDTH)
 	ground.show_behind_parent = true  # drawn under this node's own drawing (furnishings, items)
 	add_child(ground)
 	# Line the layer's cells up exactly with tile_to_screen(), whatever offset Godot's layout uses.
@@ -109,8 +114,9 @@ func _ready() -> void:
 	_generate_caves()
 
 	# A small pre-dug starting room in the middle of the map, as the onboarding design calls for.
-	for x in range(START_CENTER.x - 1, START_CENTER.x + 2):
-		for y in range(START_CENTER.y - 1, START_CENTER.y + 2):
+	# 3 x 3 blocks: the 9 x 9 cells around the start.
+	for x in range(START_CENTER.x - 4, START_CENTER.x + 5):
+		for y in range(START_CENTER.y - 4, START_CENTER.y + 5):
 			dig(Vector2i(x, y))
 			starting_room.append(Vector2i(x, y))
 
@@ -140,8 +146,8 @@ func _generate_caves() -> void:
 	var chamber_tries := 0
 	while chambers.size() < CHAMBER_COUNT and chamber_tries < 500:
 		chamber_tries += 1
-		var center := Vector2(rng.randi_range(6, GRID_WIDTH - 7), rng.randi_range(6, GRID_HEIGHT - 7))
-		if center.distance_to(Vector2(START_CENTER)) < SAFE_RADIUS + 6:
+		var center := Vector2(rng.randi_range(18, GRID_WIDTH - 19), rng.randi_range(18, GRID_HEIGHT - 19))
+		if center.distance_to(Vector2(START_CENTER)) < SAFE_RADIUS + 18:
 			continue
 		var too_close := false
 		for other in chambers:
@@ -177,15 +183,15 @@ func _generate_caves() -> void:
 			_carve_tunnel(chambers[link[0]], chambers[link[1]], rng)
 	for _n in EDGE_TUNNELS:
 		var from: Vector2 = chambers[rng.randi_range(0, chambers.size() - 1)]
-		var edge_point := Vector2(rng.randi_range(3, GRID_WIDTH - 4), [3, GRID_HEIGHT - 4][rng.randi_range(0, 1)])
+		var edge_point := Vector2(rng.randi_range(9, GRID_WIDTH - 10), [4, GRID_HEIGHT - 5][rng.randi_range(0, 1)])
 		_carve_tunnel(from, edge_point, rng)
 		edge_exits.append(Vector2i(roundi(edge_point.x), roundi(edge_point.y)))
 
 	# Sealed pockets: small caves anywhere in the rock, not joined to the network.
 	for _n in POCKET_COUNT:
-		var pocket := Vector2(rng.randi_range(4, GRID_WIDTH - 5), rng.randi_range(4, GRID_HEIGHT - 5))
-		if _area_is_rock(Vector2i(pocket), 4):
-			_carve_blob(pocket, rng.randf_range(1.5, 2.5), rng)
+		var pocket := Vector2(rng.randi_range(12, GRID_WIDTH - 13), rng.randi_range(12, GRID_HEIGHT - 13))
+		if _area_is_rock(Vector2i(pocket), 12):
+			_carve_blob(pocket, rng.randf_range(4.5, 7.5), rng)
 
 	# 4. Fill in caves too small to matter, and keep the rest for placing lairs.
 	var seen: Dictionary = {}
@@ -202,11 +208,14 @@ func _generate_caves() -> void:
 			elif cave.size() >= LAIR_MIN_CAVE:
 				big_caves.append(cave)
 
-	# 5. Mana deposits anywhere away from the start, in caves or in the rock.
-	while deposits.size() < DEPOSIT_COUNT:
-		var tile := Vector2i(rng.randi_range(1, GRID_WIDTH - 2), rng.randi_range(1, GRID_HEIGHT - 2))
-		if tile.distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE:
-			deposits[tile] = true
+	# 5. Mana deposits, one block each, anywhere away from the start, in caves or in the rock.
+	var deposit_blocks := 0
+	while deposit_blocks < DEPOSIT_COUNT:
+		var block := Vector2i(rng.randi_range(1, GRID_WIDTH / BLOCK - 2), rng.randi_range(1, GRID_HEIGHT / BLOCK - 2))
+		if block_center(block).distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE and not deposits.has(block * BLOCK):
+			for cell in block_cells(block):
+				deposits[cell] = true
+			deposit_blocks += 1
 
 	# 6. Ruins: small rooms carved into solid rock, sealed on every side so only digging finds them.
 	var lore_count := 0
@@ -214,8 +223,10 @@ func _generate_caves() -> void:
 	var ruins_made := 0
 	while ruins_made < RUIN_COUNT and ruin_tries < 300:
 		ruin_tries += 1
-		var size := Vector2i(rng.randi_range(3, 4), rng.randi_range(3, 5))
-		var corner := Vector2i(rng.randi_range(2, GRID_WIDTH - size.x - 3), rng.randi_range(2, GRID_HEIGHT - size.y - 3))
+		# 3-4 by 3-5 blocks, on the block grid.
+		var size := Vector2i(rng.randi_range(3, 4), rng.randi_range(3, 5)) * BLOCK
+		var corner := Vector2i(rng.randi_range(1, (GRID_WIDTH - size.x) / BLOCK - 2),
+			rng.randi_range(1, (GRID_HEIGHT - size.y) / BLOCK - 2)) * BLOCK
 		if _ruin_fits(corner, size):
 			var ruin_tiles: Array[Vector2i] = []
 			for dx in size.x:
@@ -231,15 +242,19 @@ func _generate_caves() -> void:
 					lore_count += 1
 			ruins_made += 1
 
-	# 7. Monster lairs on open floor in the larger caves, one cave each where possible.
+	# 7. Monster lairs, one block each, on open floor in the larger caves, one cave each where possible.
 	var tries := 0
-	while lairs.size() < LAIR_COUNT and not big_caves.is_empty() and tries < 200:
+	var lair_blocks := 0
+	while lair_blocks < LAIR_COUNT and not big_caves.is_empty() and tries < 200:
 		tries += 1  # a safety limit, in case no spot fits
 		var cave: Array = big_caves[rng.randi_range(0, big_caves.size() - 1)]
 		var tile: Vector2i = cave[rng.randi_range(0, cave.size() - 1)]
 		if tile.distance_to(START_CENTER) >= FEATURE_MIN_DISTANCE and not deposits.has(tile):
-			lairs[tile] = true
-			if big_caves.size() > LAIR_COUNT - lairs.size():
+			for cell in block_cells(block_of(tile)):
+				if is_floor(cell):
+					lairs[cell] = true
+			lair_blocks += 1
+			if big_caves.size() > LAIR_COUNT - lair_blocks:
 				big_caves.erase(cave)  # spread lairs across caves while there are enough caves
 
 	# 8. The rival dungeon, in the chamber farthest from the start.
@@ -247,41 +262,47 @@ func _generate_caves() -> void:
 	for center in chambers:
 		if center.distance_to(Vector2(START_CENTER)) > farthest.distance_to(Vector2(START_CENTER)):
 			farthest = center
-	_build_rival_room(Vector2i(farthest))
+	_build_rival_room(block_center(block_of(Vector2i(farthest))))  # centered on a block
 
 	nav_dirty = true
 
 
-## Carves the rival's walled room: a 5 x 5 floor inside a ring of rock, with the core in the middle,
-## mycelium around it, and a rival door on two opposite sides, each with a short passage outward.
+## Carves the rival's walled room: 5 x 5 blocks of floor inside a one-block ring of rock, with the core
+## in the middle, mycelium (3 x 3 blocks) around it, and a one-block rival door on two opposite sides,
+## each with a short block-wide passage outward. center is the middle cell of a block.
 func _build_rival_room(center: Vector2i) -> void:
 	rival_core = center
-	for dx in range(-3, 4):
-		for dy in range(-3, 4):
+	for dx in range(-10, 11):
+		for dy in range(-10, 11):
 			var tile := center + Vector2i(dx, dy)
+			if not is_in_bounds(tile):
+				continue
 			deposits.erase(tile)
 			lairs.erase(tile)
 			items.erase(tile)
-			if max(abs(dx), abs(dy)) == 3:
-				tiles[tile.x][tile.y] = Tile.ROCK  # the wall ring
+			if max(abs(dx), abs(dy)) >= 8:
+				tiles[tile.x][tile.y] = Tile.ROCK  # the wall ring, one block thick
 			else:
 				tiles[tile.x][tile.y] = Tile.FLOOR
 				rival_room.append(tile)
-				if max(abs(dx), abs(dy)) <= 1:
+				if max(abs(dx), abs(dy)) <= 4:
 					mycelium[tile] = true
 					rival_mycelium.append(tile)
 	for side in [Vector2i(0, -1), Vector2i(0, 1)]:
-		var door_tile: Vector2i = center + side * 3
-		tiles[door_tile.x][door_tile.y] = Tile.FLOOR
-		for step in range(4, 8):  # a short passage out, so the door always connects to the chamber
-			var passage: Vector2i = center + side * step
-			if is_in_bounds(passage) and _well_inside(Vector2(passage)):
-				tiles[passage.x][passage.y] = Tile.FLOOR
-		var door := {"id": "door", "origin": door_tile, "size": Vector2i(1, 1), "color": RIVAL_DOOR_COLOR,
+		var door_tile: Vector2i = center + side * 9 - Vector2i(1, 1)  # the door block's first cell
+		for cell in footprint(door_tile, Vector2i(BLOCK, BLOCK)):
+			tiles[cell.x][cell.y] = Tile.FLOOR
+		for step in range(11, 23):  # a short passage out, so the door always connects to the chamber
+			for across in range(-1, 2):
+				var passage: Vector2i = center + side * step + Vector2i(across, 0)
+				if is_in_bounds(passage) and _well_inside(Vector2(passage)):
+					tiles[passage.x][passage.y] = Tile.FLOOR
+		var door := {"id": "door", "origin": door_tile, "size": Vector2i(BLOCK, BLOCK), "color": RIVAL_DOOR_COLOR,
 			"blocks": false, "rotation": 0, "progress": BUILD_TIME, "solid": false, "built": true,
 			"health": DOOR_HEALTH, "owner": "rival"}
 		furnishings.append(door)
-		occupied[door_tile] = door
+		for cell in footprint(door_tile, Vector2i(BLOCK, BLOCK)):
+			occupied[cell] = door
 		rival_doors.append(door_tile)
 
 
@@ -293,7 +314,7 @@ func door_near(point: Vector2, reach: float, owner: String) -> Dictionary:
 	for furnishing in furnishings:
 		if furnishing["id"] != "door" or not furnishing["built"] or furnishing.get("owner", "player") != owner:
 			continue
-		var distance := point.distance_to(tile_to_screen(furnishing["origin"]))
+		var distance := point.distance_to(footprint_center(furnishing))
 		if distance <= best_distance:
 			best = furnishing
 			best_distance = distance
@@ -305,8 +326,8 @@ func door_near(point: Vector2, reach: float, owner: String) -> Dictionary:
 func _ruin_fits(corner: Vector2i, size: Vector2i) -> bool:
 	if (corner + size / 2).distance_to(START_CENTER) < FEATURE_MIN_DISTANCE:
 		return false
-	for dx in range(-1, size.x + 1):
-		for dy in range(-1, size.y + 1):
+	for dx in range(-BLOCK, size.x + BLOCK):  # a one-block border of rock
+		for dy in range(-BLOCK, size.y + BLOCK):
 			var tile := corner + Vector2i(dx, dy)
 			if not is_in_bounds(tile) or tiles[tile.x][tile.y] != Tile.ROCK or deposits.has(tile):
 				return false
@@ -333,7 +354,7 @@ func _carve_blob(center: Vector2, radius: float, rng: RandomNumberGenerator) -> 
 func _carve_tunnel(from: Vector2, to: Vector2, rng: RandomNumberGenerator) -> void:
 	var point := from
 	var wobble := 0.0
-	for _step in 400:  # a safety limit on length
+	for _step in 1500:  # a safety limit on length
 		if point.distance_to(to) < 1.5:
 			return
 		wobble = clamp(wobble + rng.randf_range(-0.3, 0.3), -TUNNEL_WOBBLE, TUNNEL_WOBBLE)
@@ -344,7 +365,7 @@ func _carve_tunnel(from: Vector2, to: Vector2, rng: RandomNumberGenerator) -> vo
 			ahead = point + Vector2.from_angle(angle)
 		var previous_tile := Vector2i(roundi(point.x), roundi(point.y))
 		point = ahead
-		_carve_circle(point, 0.8)  # about one to two tiles wide
+		_carve_circle(point, TUNNEL_RADIUS)  # about a block wide
 		# A diagonal step leaves two tiles touching only at a corner, which units can't pass
 		# (the walkable shape closes off corner gaps), so open a side tile to join them.
 		var tile_now := Vector2i(roundi(point.x), roundi(point.y))
@@ -459,7 +480,8 @@ func _spread_mycelium() -> void:
 	for furnishing in furnishings:
 		if furnishing["id"] != "mycelium_source" or not furnishing["built"]:
 			continue
-		var source: Vector2i = furnishing["origin"]
+		var source_cells: Array[Vector2i] = footprint(furnishing["origin"], furnishing["size"])
+		var source: Vector2i = furnishing["origin"] + furnishing["size"] / 2  # its middle cell
 		var best: Vector2i = NO_TILE
 		var best_distance := INF
 		var reach := ceili(MYCELIUM_RADIUS)
@@ -469,7 +491,7 @@ func _spread_mycelium() -> void:
 				var distance := Vector2(dx, dy).length()
 				if distance > MYCELIUM_RADIUS or distance >= best_distance:
 					continue
-				if not is_floor(tile) or mycelium.has(tile) or not _touches_mycelium(tile, source):
+				if not is_floor(tile) or mycelium.has(tile) or not _touches_mycelium(tile, source_cells):
 					continue
 				best = tile
 				best_distance = distance
@@ -478,10 +500,10 @@ func _spread_mycelium() -> void:
 			queue_redraw()
 
 
-func _touches_mycelium(tile: Vector2i, source: Vector2i) -> bool:
+func _touches_mycelium(tile: Vector2i, source_cells: Array[Vector2i]) -> bool:
 	for offset in NEIGHBORS:
 		var next: Vector2i = tile + offset
-		if next == source or mycelium.has(next):
+		if source_cells.has(next) or mycelium.has(next):
 			return true
 	return false
 
@@ -704,21 +726,62 @@ func rebuild_navigation() -> void:
 ## doors are open for its own troops and closed to the other side.
 func _bake_walkable(closed_owner: String) -> NavigationPolygon:
 	var source := NavigationMeshSourceGeometryData2D.new()
-	for x in GRID_WIDTH:
-		for y in GRID_HEIGHT:
-			if tiles[x][y] == Tile.FLOOR:
-				source.add_traversable_outline(diamond(Vector2i(x, y)))
+	# Floor goes in as runs: each unbroken stretch of floor cells along a row is one long outline.
+	# That's several times fewer outlines than one per cell, which keeps rebuilds fast on the big grid.
+	for y in GRID_HEIGHT:
+		var x := 0
+		while x < GRID_WIDTH:
+			if tiles[x][y] != Tile.FLOOR:
+				x += 1
+				continue
+			var run_start := x
+			while x < GRID_WIDTH and tiles[x][y] == Tile.FLOOR:
+				x += 1
+			source.add_traversable_outline(_cells_outline(Vector2i(run_start, y), Vector2i(x - run_start, 1)))
 	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
 	for furnishing in furnishings:
 		var closed_door: bool = furnishing["id"] == "door" and furnishing["built"] \
 			and furnishing.get("owner", "player") == closed_owner
 		if furnishing["solid"] or closed_door:
-			for tile in footprint(furnishing["origin"], furnishing["size"]):
-				source.add_obstruction_outline(diamond(tile))
+			source.add_obstruction_outline(_cells_outline(furnishing["origin"], furnishing["size"]))
 	var nav_polygon := NavigationPolygon.new()
 	nav_polygon.agent_radius = UNIT_RADIUS
 	NavigationServer2D.bake_from_source_geometry_data(nav_polygon, source)
 	return nav_polygon
+
+
+## The outline of a rectangle of cells on the grid (size cells along x and y from first): four corners
+## on screen. Used to hand the navigation builder big shapes instead of one diamond per cell.
+func _cells_outline(first: Vector2i, size: Vector2i) -> PackedVector2Array:
+	var low := Vector2(first) - Vector2(0.5, 0.5)
+	var high := Vector2(first + size) - Vector2(0.5, 0.5)
+	return PackedVector2Array([_grid_point(low), _grid_point(Vector2(high.x, low.y)),
+		_grid_point(high), _grid_point(Vector2(low.x, high.y))])
+
+
+## Any point in grid coordinates (fractions allowed) to screen position; tile_to_screen for in-between points.
+func _grid_point(point: Vector2) -> Vector2:
+	return Vector2((point.x - point.y) * TILE_WIDTH / 2.0, (point.x + point.y) * TILE_HEIGHT / 2.0)
+
+
+## The block a cell belongs to.
+func block_of(tile: Vector2i) -> Vector2i:
+	return Vector2i(floori(tile.x / float(BLOCK)), floori(tile.y / float(BLOCK)))
+
+
+## The first (top) cell of the block a cell belongs to: where block-sized things snap to.
+func block_origin(tile: Vector2i) -> Vector2i:
+	return block_of(tile) * BLOCK
+
+
+## The middle cell of a block.
+func block_center(block: Vector2i) -> Vector2i:
+	return block * BLOCK + Vector2i(1, 1)
+
+
+## The nine cells of a block.
+func block_cells(block: Vector2i) -> Array[Vector2i]:
+	return footprint(block * BLOCK, Vector2i(BLOCK, BLOCK))
 
 
 ## Raiders hit a door. At zero health it's destroyed (no refund), and both walkable shapes update.
@@ -745,7 +808,7 @@ func _draw() -> void:
 			draw_colored_polygon(diamond(tile), color)
 		# A door under attack shows its health.
 		if furnishing["id"] == "door" and furnishing.get("health", DOOR_HEALTH) < DOOR_HEALTH:
-			var spot := tile_to_screen(furnishing["origin"]) + Vector2(-30, -10)
+			var spot := footprint_center(furnishing) + Vector2(-30, -10)
 			draw_rect(Rect2(spot, Vector2(60, 6)), Color(0.2, 0.2, 0.2))
 			draw_rect(Rect2(spot, Vector2(60 * furnishing["health"] / DOOR_HEALTH, 6)), Color(0.95, 0.6, 0.2))
 
@@ -754,7 +817,7 @@ func _draw() -> void:
 		var center := tile_to_screen(tile)
 		var small := PackedVector2Array()
 		for corner in diamond(tile):
-			small.append(center + (corner - center) * 0.35)
+			small.append(center + (corner - center) * 0.8)  # most of one cell
 		draw_colored_polygon(small, ITEM_COLORS[items[tile]["kind"]])
 
 	# The placement preview: fainter than a ghost, and red where the item can't go.

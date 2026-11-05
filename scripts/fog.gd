@@ -6,7 +6,7 @@ extends Node2D
 ## The fog is a TileMapLayer of darkened ground tiles, and only cells whose visibility changed are updated.
 
 const TileTextures = preload("res://scripts/tile_textures.gd")
-const SIGHT_RADIUS := 5  # tiles a troop can see in every direction
+const SIGHT_RADIUS := 15  # cells (5 blocks) a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
 const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live ones
 
@@ -29,7 +29,7 @@ func _ready() -> void:
 		colors.append(color.darkened(MEMORY_DARKEN))
 	marked_kind = colors.size()
 	colors.append(grid.MARKED_COLOR)
-	layer.tile_set = TileTextures.build(colors)
+	layer.tile_set = TileTextures.build(colors, grid.TILE_WIDTH)
 	layer.show_behind_parent = true  # under the remembered furnishings this node draws
 	add_child(layer)
 	layer.position = grid.tile_to_screen(Vector2i.ZERO) - layer.map_to_local(Vector2i.ZERO)
@@ -131,26 +131,27 @@ func _add_lit(room_tiles: Array, into: Dictionary) -> void:
 					into[near] = true
 
 
-## Adds every tile within SIGHT_RADIUS of center that has a clear line of sight.
+## Adds every tile a troop at center can see, by casting rays: one ray from the center to each cell on
+## the edge of the sight square, marking cells as it goes and stopping at the first rock (which is seen:
+## you see walls) or at SIGHT_RADIUS. Far cheaper than checking a separate line to every cell in range,
+## which matters now that the radius is three times bigger.
 func _add_sight(center: Vector2i, into: Dictionary) -> void:
-	for dx in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
-		for dy in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
-			if dx * dx + dy * dy > SIGHT_RADIUS * SIGHT_RADIUS:
-				continue  # outside the circle
-			var tile := center + Vector2i(dx, dy)
-			if grid.is_in_bounds(tile) and _line_clear(center, tile):
-				into[tile] = true
+	into[center] = true
+	for i in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
+		for edge in [Vector2i(i, -SIGHT_RADIUS), Vector2i(i, SIGHT_RADIUS), Vector2i(-SIGHT_RADIUS, i), Vector2i(SIGHT_RADIUS, i)]:
+			_cast_ray(center, center + edge, into)
 
 
-## True if nothing blocks sight between two tiles. Steps along the straight line between them and
-## checks each tile it passes; any rock in between blocks it. The end tile can be rock: you see walls.
-func _line_clear(from: Vector2i, to: Vector2i) -> bool:
+func _cast_ray(from: Vector2i, to: Vector2i, into: Dictionary) -> void:
 	var steps: int = max(abs(to.x - from.x), abs(to.y - from.y))
-	for i in range(1, steps):
+	for i in range(1, steps + 1):
 		var point := Vector2(from).lerp(Vector2(to), float(i) / steps)
-		if not grid.is_floor(Vector2i(roundi(point.x), roundi(point.y))):
-			return false
-	return true
+		var tile := Vector2i(roundi(point.x), roundi(point.y))
+		if not grid.is_in_bounds(tile) or Vector2(tile - from).length() > SIGHT_RADIUS:
+			return
+		into[tile] = true
+		if not grid.is_floor(tile):
+			return  # rock: seen, but blocks everything beyond it
 
 
 ## Remembered furnishings and items, darkened, on top of the fog tiles.

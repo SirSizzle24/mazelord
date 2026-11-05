@@ -91,8 +91,9 @@ func _on_rotate_pressed() -> void:
 
 
 ## The chosen item's size after rotating: every quarter turn swaps width and length.
+## In cells: furnishing sizes are listed in blocks.
 func _current_size() -> Vector2i:
-	var size: Vector2i = dungeon.FURNISHINGS[selected_id]["size"]
+	var size: Vector2i = dungeon.FURNISHINGS[selected_id]["size"] * grid.BLOCK
 	if rotation_steps % 2 == 1:
 		size = Vector2i(size.y, size.x)
 	return size
@@ -131,13 +132,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		_remove_at(tile)
 		return
 
-	preview_tile = tile  # tapping moves the preview; Place confirms it
+	preview_tile = grid.block_origin(tile)  # furnishings snap to the block grid; Place confirms
 
 
 ## Removes whatever is on a tile: a dig mark, a blueprint, or a finished furnishing.
 func _remove_at(tile: Vector2i) -> void:
 	if grid.is_marked(tile):
-		grid.unmark(tile)
+		for cell in grid.block_cells(grid.block_of(tile)):
+			grid.unmark(cell)  # clears the whole block's marks
 		return
 	var furnishing: Dictionary = grid.furnishing_at(tile)
 	if furnishing.is_empty() or furnishing.get("owner", "player") != "player":

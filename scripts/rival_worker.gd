@@ -2,7 +2,7 @@ extends "res://scripts/fighter.gd"
 ## A rival worker. Waits by the rival core; when a guard goes down off the mycelium, it walks over,
 ## carries the guard to the rival mycelium, and sets it down to revive. Weak, and can be attacked.
 
-const SPEED := 130.0
+const SPEED := 195.0
 const RADIUS := 14.0
 const COLOR := Color(0.75, 0.55, 0.85)
 const REPATH_TIME := 0.5

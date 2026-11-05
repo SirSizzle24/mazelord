@@ -111,7 +111,7 @@ func _flight_members(flight: int) -> Array:
 ## The unit under a world position, or null if there isn't one.
 func _unit_at(world_position: Vector2) -> Node2D:
 	for unit in get_tree().get_nodes_in_group("units"):
-		if world_position.distance_to(unit.global_position) <= unit.RADIUS + TAP_SLACK:
+		if world_position.distance_to(unit.global_position) <= unit.radius + TAP_SLACK:
 			return unit
 	return null
 

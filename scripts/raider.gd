@@ -4,12 +4,12 @@ extends "res://scripts/fighter.gd"
 ## way, they bash it down; only when rock blocks it do they dig (slowly). Retreating, it heads back to where it
 ## came in and leaves. Only shows while one of your troops can see it.
 
-const SPEED := 150.0  # pixels per second
-const RADIUS := 18.0
+const SPEED := 225.0  # pixels per second
+const RADIUS := 27.0
 const COLOR := Color(0.85, 0.20, 0.20)
 const REPATH_TIME := 1.0  # seconds between fresh paths, since your dungeon changes as it walks
-const DIG_TIME := 4.0  # seconds to dig a tile; slower than your workers, so you have time to react
-const ARRIVE_DISTANCE := 60.0  # how close counts as reaching the core or the exit
+const DIG_TIME := 4.0  # seconds to dig a whole block; slower than your workers, so you have time to react
+const ARRIVE_DISTANCE := 90.0  # how close counts as reaching the core or the exit
 
 var grid: Node2D
 var fog: Node2D
@@ -18,7 +18,7 @@ var retreating := false
 var carrying_loot := false  # set when it reached your core
 var path: PackedVector2Array = []
 var repath_time_left := 0.0
-var dig_tile := Vector2i(-1, -1)  # the rock it's digging, or (-1, -1)
+var dig_tile := Vector2i(-1, -1)  # the block it's digging (block coordinates), or (-1, -1)
 var dig_time_left := 0.0
 var door: Dictionary = {}  # the door it's breaking down, or empty
 var bash_cooldown := 0.0
@@ -135,18 +135,23 @@ func _bash_door(delta: float) -> void:
 		queue_redraw()
 
 
-## Picks the rock tile beside it that's closest to the goal, and starts digging it.
+## Picks the block beside it, still holding rock, that's closest to the goal, and starts digging it.
+## Raiders dig whole blocks, so their tunnels are always wide enough to walk.
 func _start_digging_toward(goal: Vector2) -> void:
-	var here: Vector2i = grid.screen_to_tile(position)
-	var goal_tile: Vector2i = grid.screen_to_tile(goal)
+	var here: Vector2i = grid.block_of(grid.screen_to_tile(position))
+	var goal_block: Vector2i = grid.block_of(grid.screen_to_tile(goal))
 	var best: Vector2i = grid.NO_TILE
 	var best_distance := INF
 	for offset in grid.NEIGHBORS:
-		var tile: Vector2i = here + offset
-		if grid.is_in_bounds(tile) and not grid.is_floor(tile):
-			var distance := Vector2(tile).distance_to(Vector2(goal_tile))
+		var block: Vector2i = here + offset
+		var has_rock := false
+		for cell in grid.block_cells(block):
+			if grid.is_in_bounds(cell) and not grid.is_floor(cell):
+				has_rock = true
+		if has_rock:
+			var distance := Vector2(block).distance_to(Vector2(goal_block))
 			if distance < best_distance:
-				best = tile
+				best = block
 				best_distance = distance
 	dig_tile = best
 	dig_time_left = DIG_TIME
@@ -156,7 +161,8 @@ func _keep_digging(delta: float) -> void:
 	dig_time_left -= delta
 	if dig_time_left > 0.0:
 		return
-	grid.dig(dig_tile)  # unseen digging doesn't show in the fog until a troop looks
-	position = grid.tile_to_screen(dig_tile)  # step into the new tunnel
+	for cell in grid.block_cells(dig_tile):
+		grid.dig(cell)  # unseen digging doesn't show in the fog until a troop looks
+	position = grid.tile_to_screen(grid.block_center(dig_tile))  # step into the new tunnel
 	dig_tile = grid.NO_TILE
 	repath_time_left = 0.0
