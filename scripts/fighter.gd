@@ -10,7 +10,7 @@ var health := 30.0
 var damage := 3.0
 var attack_range := 50.0  # pixels, center to center
 var attack_interval := 1.0  # seconds between attacks
-var enemy_group := "raiders"  # the group this fighter attacks
+var enemy_group := "hostiles"  # the group this fighter attacks ("hostiles" or "units")
 var downed := false
 
 var attack_cooldown := 0.0

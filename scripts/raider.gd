@@ -26,6 +26,7 @@ var bash_cooldown := 0.0
 
 func _ready() -> void:
 	add_to_group("raiders")
+	add_to_group("hostiles")  # what your troops attack
 	enemy_group = "units"
 
 

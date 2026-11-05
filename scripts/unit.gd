@@ -48,6 +48,7 @@ var is_named := false
 var troop_name := ""
 var awaiting_name := false  # fame reached the threshold; the player is choosing a name
 var service_time := 0.0
+var door_bash_cooldown := 0.0
 var carried_by: Node2D = null  # the worker carrying this injured troop, or null
 var rescuer: Node2D = null  # the worker on its way to rescue it, or null
 
@@ -62,7 +63,7 @@ func setup(new_type_id: String, troop_type: Dictionary) -> void:
 
 func _ready() -> void:
 	add_to_group("units")  # lets the controller find every unit
-	enemy_group = "raiders"
+	enemy_group = "hostiles"  # raiders, rival guards and rival workers
 	grid.dig(start_tile)  # make sure it starts on floor
 	position = grid.tile_to_screen(start_tile)
 
@@ -82,6 +83,23 @@ func give_name(chosen: String) -> void:
 	awaiting_name = false
 	troop_name = chosen
 	roster_label = chosen
+	queue_redraw()
+
+
+## Rival doors are closed to your troops; a troop next to one breaks it down.
+func _bash_rival_door(delta: float) -> void:
+	door_bash_cooldown = max(door_bash_cooldown - delta, 0.0)
+	if door_bash_cooldown > 0.0:
+		return
+	var reach: float = attack_range + grid.TILE_WIDTH / 2.0  # the door's tile is out of walking range
+	var door: Dictionary = grid.door_near(position, reach, "rival")
+	if door.is_empty():
+		return
+	grid.damage_door(door, damage)
+	door_bash_cooldown = attack_interval
+	flash_at = grid.tile_to_screen(door["origin"]) - position
+	flash_time_left = FLASH_TIME
+	add_fame(damage * FAME_PER_DAMAGE)
 	queue_redraw()
 
 
@@ -438,6 +456,8 @@ func _process(delta: float) -> void:
 		_process_injured(delta)
 		return
 	_fight(delta)  # attacks any raider in range, even while walking
+	if target == null:
+		_bash_rival_door(delta)  # nothing to fight: break any rival door within reach
 	service_time += delta
 	if service_time >= 60.0:
 		service_time -= 60.0

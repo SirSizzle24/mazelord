@@ -15,6 +15,7 @@
 [ext_resource type="PackedScene" path="res://Scenes/raider.tscn" id="13_raiderscene"]
 [ext_resource type="Script" path="res://scripts/raids.gd" id="14_raids"]
 [ext_resource type="Script" path="res://scripts/naming.gd" id="15_naming"]
+[ext_resource type="Script" path="res://scripts/rival.gd" id="16_rival"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -50,6 +51,14 @@ fog = NodePath("../Fog")
 raider_scene = ExtResource("13_raiderscene")
 units_parent = NodePath("..")
 raid_label = NodePath("../UI/RaidLabel")
+
+[node name="Rival" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "fog", "units_parent", "message_label")]
+script = ExtResource("16_rival")
+grid = NodePath("../Grid")
+dungeon = NodePath("../Dungeon")
+fog = NodePath("../Fog")
+units_parent = NodePath("..")
+message_label = NodePath("../UI/RivalMessage")
 
 [node name="Rooms" type="Node" parent="." node_paths=PackedStringArray("grid", "dungeon", "camera", "room_label")]
 script = ExtResource("9_rooms")
@@ -307,3 +316,12 @@ script = ExtResource("15_naming")
 dungeon = NodePath("../../Dungeon")
 roster = NodePath("../RosterPanel")
 announcement = NodePath("../NameAnnouncement")
+
+[node name="RivalMessage" type="Label" parent="UI"]
+offset_left = 340.0
+offset_top = 545.0
+offset_right = 940.0
+offset_bottom = 575.0
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.85, 0.7, 1, 1)
+text = "Rival"

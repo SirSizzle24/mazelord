@@ -46,6 +46,7 @@ const ITEM_KINDS := ["mana_cache", "food_cache", "treasure", "lore"]
 const TROOP_LAYER := 1
 const RAIDER_LAYER := 2
 const DOOR_HEALTH := 60.0
+const RIVAL_DOOR_COLOR := Color(0.35, 0.15, 0.40)
 
 const MYCELIUM_COLOR := Color(0.70, 0.55, 0.85, 0.45)  # drawn over the floor, see-through
 const MYCELIUM_SPREAD_TIME := 1.5  # seconds for each source to spread onto one more tile
@@ -66,6 +67,10 @@ var deposits: Dictionary = {}  # mana deposit tiles (used as a set)
 var lairs: Dictionary = {}  # monster lair tiles (used as a set)
 var mycelium: Dictionary = {}  # floor tiles covered in mycelium (used as a set); heals fungi
 var mycelium_timer := 0.0
+var rival_core: Vector2i = Vector2i(-1, -1)  # the rival dungeon's core, in the farthest chamber
+var rival_room: Array[Vector2i] = []  # the rival room's floor tiles
+var rival_mycelium: Array[Vector2i] = []  # where rival workers carry their downed guards
+var rival_doors: Array[Vector2i] = []  # the rival room's two doors
 var edge_exits: Array[Vector2i] = []  # where tunnels lead off toward the map edge; raiders enter here
 var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"}
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
@@ -219,7 +224,62 @@ func _generate_caves() -> void:
 			if big_caves.size() > LAIR_COUNT - lairs.size():
 				big_caves.erase(cave)  # spread lairs across caves while there are enough caves
 
+	# 8. The rival dungeon, in the chamber farthest from the start.
+	var farthest: Vector2 = chambers[0]
+	for center in chambers:
+		if center.distance_to(Vector2(START_CENTER)) > farthest.distance_to(Vector2(START_CENTER)):
+			farthest = center
+	_build_rival_room(Vector2i(farthest))
+
 	nav_dirty = true
+
+
+## Carves the rival's walled room: a 5 x 5 floor inside a ring of rock, with the core in the middle,
+## mycelium around it, and a rival door on two opposite sides, each with a short passage outward.
+func _build_rival_room(center: Vector2i) -> void:
+	rival_core = center
+	for dx in range(-3, 4):
+		for dy in range(-3, 4):
+			var tile := center + Vector2i(dx, dy)
+			deposits.erase(tile)
+			lairs.erase(tile)
+			items.erase(tile)
+			if max(abs(dx), abs(dy)) == 3:
+				tiles[tile.x][tile.y] = Tile.ROCK  # the wall ring
+			else:
+				tiles[tile.x][tile.y] = Tile.FLOOR
+				rival_room.append(tile)
+				if max(abs(dx), abs(dy)) <= 1:
+					mycelium[tile] = true
+					rival_mycelium.append(tile)
+	for side in [Vector2i(0, -1), Vector2i(0, 1)]:
+		var door_tile: Vector2i = center + side * 3
+		tiles[door_tile.x][door_tile.y] = Tile.FLOOR
+		for step in range(4, 8):  # a short passage out, so the door always connects to the chamber
+			var passage: Vector2i = center + side * step
+			if is_in_bounds(passage) and _well_inside(Vector2(passage)):
+				tiles[passage.x][passage.y] = Tile.FLOOR
+		var door := {"id": "door", "origin": door_tile, "size": Vector2i(1, 1), "color": RIVAL_DOOR_COLOR,
+			"blocks": false, "rotation": 0, "progress": BUILD_TIME, "solid": false, "built": true,
+			"health": DOOR_HEALTH, "owner": "rival"}
+		furnishings.append(door)
+		occupied[door_tile] = door
+		rival_doors.append(door_tile)
+
+
+## The closest finished door of the given owner within reach of a point, or an empty dictionary.
+## Your troops use it to find rival doors to bash.
+func door_near(point: Vector2, reach: float, owner: String) -> Dictionary:
+	var best: Dictionary = {}
+	var best_distance := reach
+	for furnishing in furnishings:
+		if furnishing["id"] != "door" or not furnishing["built"] or furnishing.get("owner", "player") != owner:
+			continue
+		var distance := point.distance_to(tile_to_screen(furnishing["origin"]))
+		if distance <= best_distance:
+			best = furnishing
+			best_distance = distance
+	return best
 
 
 ## True if a ruin of this size fits here: far from the start, and the ruin plus a one-tile border
@@ -366,9 +426,13 @@ func unmark(tile: Vector2i) -> void:
 		marks_changed.emit()
 
 
-## True if this tile is covered in mycelium.
-func has_mycelium(tile: Vector2i) -> bool:
-	return mycelium.has(tile)
+## True if this tile is covered in mycelium belonging to that side ("player" or "rival").
+## Mycelium only heals its own side: your troops can't heal in the rival's room, and the reverse.
+func has_mycelium(tile: Vector2i, owner: String = "player") -> bool:
+	if not mycelium.has(tile):
+		return false
+	var is_rival: bool = rival_mycelium.has(tile)
+	return is_rival if owner == "rival" else not is_rival
 
 
 ## Each finished mycelium source spreads onto one more floor tile: the closest open tile to it that
@@ -412,6 +476,8 @@ func nearest_free_mycelium(from: Vector2) -> Vector2i:
 	for tile in mycelium:
 		if occupied.has(tile) and occupied[tile]["blocks"]:
 			continue
+		if rival_mycelium.has(tile):
+			continue  # never carry your injured into the rival's room
 		var distance := from.distance_to(tile_to_screen(tile))
 		if distance < best_distance:
 			best = tile
@@ -459,7 +525,7 @@ func can_place(origin: Vector2i, size: Vector2i, needs_deposit: bool = false) ->
 ## rotation is in quarter turns (0 to 3), kept so later art can face the right way.
 func place_blueprint(id: String, origin: Vector2i, size: Vector2i, color: Color, blocks: bool, rotation_steps: int = 0) -> void:
 	var furnishing := {"id": id, "origin": origin, "size": size, "color": color, "blocks": blocks,
-		"rotation": rotation_steps, "progress": 0.0, "solid": false, "built": false}
+		"rotation": rotation_steps, "progress": 0.0, "solid": false, "built": false, "owner": "player"}
 	furnishings.append(furnishing)
 	for tile in footprint(origin, size):
 		occupied[tile] = furnishing
@@ -606,8 +672,8 @@ func dig(tile: Vector2i) -> void:
 func rebuild_navigation() -> void:
 	var start_time := Time.get_ticks_usec()
 
-	nav_region.navigation_polygon = _bake_walkable(false)
-	raider_region.navigation_polygon = _bake_walkable(true)
+	nav_region.navigation_polygon = _bake_walkable("rival")  # your troops: rival doors are closed
+	raider_region.navigation_polygon = _bake_walkable("player")  # hostiles: your doors are closed
 	nav_version += 1
 
 	var elapsed_ms := (Time.get_ticks_usec() - start_time) / 1000.0
@@ -615,8 +681,9 @@ func rebuild_navigation() -> void:
 
 
 ## Builds a walkable shape from every floor tile, minus solid furnishings, shrunk by UNIT_RADIUS so
-## units keep clear of rock. With doors_closed, finished doors are cut out too (the raiders' shape).
-func _bake_walkable(doors_closed: bool) -> NavigationPolygon:
+## units keep clear of rock. Finished doors belonging to closed_owner are cut out too: each side's
+## doors are open for its own troops and closed to the other side.
+func _bake_walkable(closed_owner: String) -> NavigationPolygon:
 	var source := NavigationMeshSourceGeometryData2D.new()
 	for x in GRID_WIDTH:
 		for y in GRID_HEIGHT:
@@ -624,7 +691,8 @@ func _bake_walkable(doors_closed: bool) -> NavigationPolygon:
 				source.add_traversable_outline(diamond(Vector2i(x, y)))
 	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
 	for furnishing in furnishings:
-		var closed_door: bool = doors_closed and furnishing["id"] == "door" and furnishing["built"]
+		var closed_door: bool = furnishing["id"] == "door" and furnishing["built"] \
+			and furnishing.get("owner", "player") == closed_owner
 		if furnishing["solid"] or closed_door:
 			for tile in footprint(furnishing["origin"], furnishing["size"]):
 				source.add_obstruction_outline(diamond(tile))

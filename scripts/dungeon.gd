@@ -24,6 +24,8 @@ const NAME_PARTS := [["Mor", "Spor", "Myc", "Lum", "Gil", "Fun", "Rot", "Dam"],
 	["a", "o", "ix", "el", "ug", "wen", "ble", "ish"]]
 
 const RAIDER_STATS := {"health": 40.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
+const GUARD_STATS := {"health": 50.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
+const RIVAL_WORKER_STATS := {"health": 25.0, "damage": 2.0, "range": 45.0, "attack_interval": 1.4}
 const RAIDER_MIN_DISTANCE := 10.0  # debug raiders appear at least this many tiles from the core
 
 ## Every furnishing that can be built. Size is in tiles along the grid; costs are placeholders to tune.

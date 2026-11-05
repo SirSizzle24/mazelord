@@ -140,8 +140,8 @@ func _remove_at(tile: Vector2i) -> void:
 		grid.unmark(tile)
 		return
 	var furnishing: Dictionary = grid.furnishing_at(tile)
-	if furnishing.is_empty():
-		return
+	if furnishing.is_empty() or furnishing.get("owner", "player") != "player":
+		return  # nothing there, or it's the rival's (break rival doors by fighting)
 	var cost: int = dungeon.FURNISHINGS[furnishing["id"]]["cost"]
 	var refund: int = cost if not furnishing["built"] else int(cost * DECONSTRUCT_REFUND)
 	grid.remove_furnishing(furnishing)
