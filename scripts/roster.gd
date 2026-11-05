@@ -170,9 +170,14 @@ class Card extends PanelContainer:
 		if not is_instance_valid(unit):
 			text.text = "(gone)"
 			return
-		text.text = "%s\n%s\nHP %d/%d  DMG %d  RNG %d  %.1fs\n%s\nFame: -    Traits: -" % [
+		text.text = "%s\n%s\nHP %d/%d  DMG %d  RNG %d  %.1fs\n%s\n%s    Traits: -" % [
 			unit.roster_label, dungeon_type_name(), int(unit.health), int(unit.max_health), int(unit.damage),
-			int(unit.attack_range), unit.attack_interval, unit.status_text()]
+			int(unit.attack_range), unit.attack_interval, unit.status_text(), fame_text()]
+
+	func fame_text() -> String:
+		if unit.is_named:
+			return "Fame: %d (named)" % int(unit.fame)
+		return "Fame: %d / %d" % [int(unit.fame), int(unit.dungeon.name_threshold())]
 
 	func dungeon_type_name() -> String:
 		return unit.type_id.capitalize()

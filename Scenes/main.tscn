@@ -14,6 +14,7 @@
 [ext_resource type="Script" path="res://scripts/roster.gd" id="12_roster"]
 [ext_resource type="PackedScene" path="res://Scenes/raider.tscn" id="13_raiderscene"]
 [ext_resource type="Script" path="res://scripts/raids.gd" id="14_raids"]
+[ext_resource type="Script" path="res://scripts/naming.gd" id="15_naming"]
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
@@ -287,3 +288,22 @@ offset_right = 260.0
 offset_bottom = 533.0
 toggle_mode = true
 text = "Alarm: workers to quarters"
+
+[node name="NameAnnouncement" type="Label" parent="UI"]
+offset_left = 340.0
+offset_top = 580.0
+offset_right = 940.0
+offset_bottom = 610.0
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.9, 0.5, 1)
+text = "Named"
+
+[node name="NamingPanel" type="PanelContainer" parent="UI" node_paths=PackedStringArray("dungeon", "roster", "announcement")]
+offset_left = 490.0
+offset_top = 250.0
+offset_right = 790.0
+offset_bottom = 380.0
+script = ExtResource("15_naming")
+dungeon = NodePath("../../Dungeon")
+roster = NodePath("../RosterPanel")
+announcement = NodePath("../NameAnnouncement")

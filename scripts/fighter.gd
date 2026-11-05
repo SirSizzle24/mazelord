@@ -28,14 +28,22 @@ func set_stats(stats: Dictionary) -> void:
 	attack_interval = stats["attack_interval"]
 
 
-func take_damage(amount: float) -> void:
+## Returns true if this hit downed the fighter, so the attacker can be credited.
+func take_damage(amount: float) -> bool:
 	if downed:
-		return
+		return false
 	health = max(health - amount, 0.0)
+	queue_redraw()
 	if health == 0.0:
 		downed = true
 		_on_downed()
-	queue_redraw()
+		return true
+	return false
+
+
+## Called after each hit this fighter lands. Troops use it to earn fame; raiders ignore it.
+func _on_hit_landed(_damage_dealt: float, _downed_it: bool) -> void:
+	pass
 
 
 ## Called once when health reaches zero. Troops and raiders each add what they need.
@@ -61,7 +69,8 @@ func _fight(delta: float) -> bool:
 		return false
 
 	if attack_cooldown == 0.0:
-		target.take_damage(damage)
+		var downed_it: bool = target.take_damage(damage)
+		_on_hit_landed(damage, downed_it)
 		attack_cooldown = attack_interval
 		flash_at = target.position - position
 		flash_time_left = FLASH_TIME

@@ -13,6 +13,13 @@ const DEATH_TIME := 60.0  # seconds an injured troop survives off mycelium
 const HEAL_TIME := 20.0  # seconds on mycelium for an injured troop to get back up
 const RECOVERED_HEALTH := 0.5  # share of full health it gets back up with
 const MYCELIUM_REGEN := 2.0  # health per second a hurt (but standing) fungus regains on mycelium
+# Fame earned, per deed. Placeholders to tune.
+const FAME_PER_JOB := 1.0  # digging, building, hauling
+const FAME_PER_RESCUE := 3.0
+const FAME_PER_DAMAGE := 0.1  # so 10 damage dealt = 1 fame
+const FAME_PER_DOWNED_RAIDER := 5.0
+const FAME_FOR_SURVIVING := 5.0  # standing when a raid ends, or recovering from an injury
+const FAME_PER_MINUTE := 1.0  # long service
 
 @export var grid: Node2D
 @export var start_tile := Vector2i(30, 30)
@@ -36,6 +43,11 @@ var unreachable_version := -1  # the grid's nav_version when unreachable was las
 
 var death_time_left := 0.0  # while injured
 var heal_time := 0.0  # seconds spent healing on mycelium while injured
+var fame := 0.0
+var is_named := false
+var troop_name := ""
+var awaiting_name := false  # fame reached the threshold; the player is choosing a name
+var service_time := 0.0
 var carried_by: Node2D = null  # the worker carrying this injured troop, or null
 var rescuer: Node2D = null  # the worker on its way to rescue it, or null
 
@@ -55,6 +67,30 @@ func _ready() -> void:
 	position = grid.tile_to_screen(start_tile)
 
 
+## Adds fame. Crossing the threshold asks the player to name this troop.
+func add_fame(amount: float) -> void:
+	fame += amount
+	if not is_named and not awaiting_name and fame >= dungeon.name_threshold():
+		awaiting_name = true
+		dungeon.name_earned.emit(self)
+
+
+## The player chose a name. From now on this troop is named: it hurts more to lose, and later it can
+## become a hero.
+func give_name(chosen: String) -> void:
+	is_named = true
+	awaiting_name = false
+	troop_name = chosen
+	roster_label = chosen
+	queue_redraw()
+
+
+func _on_hit_landed(damage_dealt: float, downed_it: bool) -> void:
+	add_fame(damage_dealt * FAME_PER_DAMAGE)
+	if downed_it:
+		add_fame(FAME_PER_DOWNED_RAIDER)
+
+
 ## The tile the unit is currently over.
 func get_tile() -> Vector2i:
 	return grid.screen_to_tile(position)
@@ -68,6 +104,9 @@ func _draw() -> void:
 		# Flight and element above the troop, e.g. "2-1".
 		draw_string(ThemeDB.fallback_font, Vector2(-30, -RADIUS - 6.0), "%d-%d" % [flight, element],
 			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
+	if is_named:
+		draw_string(ThemeDB.fallback_font, Vector2(-60, RADIUS + 26.0), troop_name,
+			HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color(1.0, 0.9, 0.5))
 	_draw_combat(RADIUS)
 	if downed:
 		if grid.has_mycelium(get_tile()):
@@ -290,6 +329,7 @@ func _haul_step() -> void:
 		return
 	# At storage: deliver it, and only now does it take effect.
 	dungeon.receive_item(job["item"])
+	add_fame(FAME_PER_JOB)
 	job["carrying"] = false  # delivered, so releasing the job mustn't put it down again
 	_release_job()
 	queue_redraw()
@@ -308,6 +348,7 @@ func _rescue_step() -> void:
 		return
 	# At the mycelium: set the patient down to heal.
 	patient.carried_by = null
+	add_fame(FAME_PER_RESCUE)
 	patient.position = position
 	job["carrying"] = false
 	_release_job()
@@ -380,13 +421,14 @@ func _recover() -> void:
 	downed = false
 	health = max_health * RECOVERED_HEALTH
 	dungeon.on_troop_healed()
+	add_fame(FAME_FOR_SURVIVING)
 	queue_redraw()
 	if can_dig:
 		dispatcher.request()
 
 
 func _die() -> void:
-	dungeon.on_troop_died(type_id, false)  # no troop has a name yet; fame comes later
+	dungeon.on_troop_died(type_id, is_named)  # named troops hurt more to lose
 	remove_from_group("units")  # leaves the troop count, the roster and the dispatcher right away
 	queue_free()
 
@@ -396,6 +438,10 @@ func _process(delta: float) -> void:
 		_process_injured(delta)
 		return
 	_fight(delta)  # attacks any raider in range, even while walking
+	service_time += delta
+	if service_time >= 60.0:
+		service_time -= 60.0
+		add_fame(FAME_PER_MINUTE)
 	if health < max_health and grid.has_mycelium(get_tile()):
 		health = min(health + MYCELIUM_REGEN * delta, max_health)  # mycelium mends hurt fungi too
 		queue_redraw()
@@ -443,6 +489,7 @@ func _process(delta: float) -> void:
 	# Job finished.
 	var done := job
 	_release_job()
+	add_fame(FAME_PER_JOB)
 	if done["kind"] == "dig":
 		grid.dig(done["tile"])
 		# Tunnel in: step straight into the freshly dug tile, then look for the next job on arrival.

@@ -111,6 +111,9 @@ func _run_raid(delta: float) -> void:
 
 func _end_raid(text: String) -> void:
 	active = false
+	for unit in get_tree().get_nodes_in_group("units"):
+		if not unit.downed:
+			unit.add_fame(unit.FAME_FOR_SURVIVING)  # on its feet when the raid ended
 	for raider in get_tree().get_nodes_in_group("raiders"):
 		raider.queue_free()  # clear away downed raiders too
 	raid_size += 1

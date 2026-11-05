@@ -5,6 +5,7 @@ signal mana_changed(new_amount: int)
 signal food_changed(new_amount: int)
 signal lore_found(text: String)
 signal troop_summoned(unit: Node2D)  # the roster listens, to add a row
+signal name_earned(unit: Node2D)  # the naming panel listens, to ask for a name
 
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
@@ -14,6 +15,14 @@ const TROOP_TYPES := {
 		"health": 60.0, "damage": 8.0, "range": 55.0, "attack_interval": 1.0},
 }
 ## The generic raider for the prototype. Stats are placeholders to tune.
+## Fame: a troop earns a name when its fame reaches the threshold, which rises with each living named
+## troop, so names stay rare (and a named troop's death makes the next name easier again).
+const NAME_THRESHOLD_BASE := 30.0
+const NAME_THRESHOLD_STEP := 20.0
+## Placeholder syllables for suggested names (yours to rewrite so they sound like your fungi).
+const NAME_PARTS := [["Mor", "Spor", "Myc", "Lum", "Gil", "Fun", "Rot", "Dam"],
+	["a", "o", "ix", "el", "ug", "wen", "ble", "ish"]]
+
 const RAIDER_STATS := {"health": 40.0, "damage": 6.0, "range": 52.0, "attack_interval": 1.0}
 const RAIDER_MIN_DISTANCE := 10.0  # debug raiders appear at least this many tiles from the core
 
@@ -195,6 +204,23 @@ func set_workers_sheltered(sheltered: bool) -> void:
 				unit.move_to_point(rooms.shelter_spot())
 			else:
 				dispatcher.request()  # back to work
+
+
+func named_count() -> int:
+	var total := 0
+	for unit in get_tree().get_nodes_in_group("units"):
+		if unit.is_named:
+			total += 1
+	return total
+
+
+func name_threshold() -> float:
+	return NAME_THRESHOLD_BASE + NAME_THRESHOLD_STEP * named_count()
+
+
+## A suggested name, built from two placeholder syllables.
+func suggest_name() -> String:
+	return NAME_PARTS[0].pick_random() + NAME_PARTS[1].pick_random()
 
 
 func troop_count() -> int:
