@@ -60,6 +60,8 @@ const MYCELIUM_COLOR := Color(0.70, 0.55, 0.85, 0.45)  # drawn over the floor, s
 const MYCELIUM_SPREAD_TIME := 0.17  # seconds per cell spread (about a block every 1.5 seconds)
 const MYCELIUM_RADIUS := 12.0  # how far mycelium spreads from its source, in cells (4 blocks)
 
+const REBUILD_INTERVAL := 0.25  # at most four rebuilds a second, so digging a block isn't nine rebuilds
+
 const BUILD_TIME := 2.0  # seconds of work to build a furnishing
 const SOLID_AT := 0.5  # fraction built at which a blocking furnishing starts blocking movement
 
@@ -88,6 +90,11 @@ var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors 
 var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 var nav_version := 0  # goes up with every rebuild, so units can tell the walkable shape changed
+var baking := 0  # walkable shapes still being built in the background (0 when idle)
+var row_runs: Array = []  # row y -> outlines of that row's floor runs, kept between rebuilds
+var dirty_rows: Dictionary = {}  # rows whose floor changed since their runs were last worked out
+var rebuild_cooldown := 0.0  # seconds until another rebuild may start
+var bake_started_usec := 0
 
 
 func _ready() -> void:
@@ -423,12 +430,15 @@ func _process(delta: float) -> void:
 		mycelium_timer -= MYCELIUM_SPREAD_TIME
 		_spread_mycelium()
 
-	# Rebuild at most once per frame, so dragging across many tiles costs one rebuild.
+	# Rebuild at most every REBUILD_INTERVAL, and only when no rebuild is still running in the background;
+	# changes made meanwhile keep nav_dirty on and are picked up by the next one.
 	# Wait until the navigation server has synced its map at least once (iteration 0 means
 	# not yet); a mesh handed over before then is lost, which broke the starting room.
+	rebuild_cooldown = max(rebuild_cooldown - delta, 0.0)
 	var map_ready := NavigationServer2D.map_get_iteration_id(get_world_2d().navigation_map) > 0
-	if nav_dirty and map_ready:
+	if nav_dirty and map_ready and baking == 0 and rebuild_cooldown == 0.0:
 		nav_dirty = false
+		rebuild_cooldown = REBUILD_INTERVAL
 		rebuild_navigation()
 
 
@@ -704,50 +714,86 @@ func dig(tile: Vector2i) -> void:
 	if is_in_bounds(tile) and tiles[tile.x][tile.y] == Tile.ROCK:
 		tiles[tile.x][tile.y] = Tile.FLOOR
 		_update_ground(tile)
+		dirty_rows[tile.y] = true  # this row's floor runs need working out again
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
 		layout_changed.emit()
 
 
 ## Builds the walkable shape from every floor tile, shrunk by UNIT_RADIUS so units keep clear of rock.
+## Starts rebuilding both walkable shapes in the background. Gathering the outlines happens here, on the
+## main thread (it's quick); the slow part, baking, runs on another thread, and each shape is swapped in
+## when it's done. Until then troops keep using the old shapes, a few frames out of date.
 func rebuild_navigation() -> void:
-	var start_time := Time.get_ticks_usec()
-
-	nav_region.navigation_polygon = _bake_walkable("rival")  # your troops: rival doors are closed
-	raider_region.navigation_polygon = _bake_walkable("player")  # hostiles: your doors are closed
-	nav_version += 1
-
-	var elapsed_ms := (Time.get_ticks_usec() - start_time) / 1000.0
-	print("Navigation rebuilt in %.2f ms" % elapsed_ms)  # temporary: measuring the cost
+	bake_started_usec = Time.get_ticks_usec()
+	baking = 2
+	_refresh_rows()  # once, shared by both shapes
+	_bake_in_background(nav_region, "rival")  # your troops: rival doors are closed
+	_bake_in_background(raider_region, "player")  # hostiles: your doors are closed
 
 
-## Builds a walkable shape from every floor tile, minus solid furnishings, shrunk by UNIT_RADIUS so
-## units keep clear of rock. Finished doors belonging to closed_owner are cut out too: each side's
-## doors are open for its own troops and closed to the other side.
-func _bake_walkable(closed_owner: String) -> NavigationPolygon:
+func _bake_in_background(region: NavigationRegion2D, closed_owner: String) -> void:
+	var source := _walkable_source(closed_owner)
+	var nav_polygon := NavigationPolygon.new()
+	nav_polygon.agent_radius = UNIT_RADIUS
+	# The callback can arrive from the background thread, so hand the result to the main thread with
+	# call_deferred before touching the scene.
+	NavigationServer2D.bake_from_source_geometry_data_async(nav_polygon, source,
+		func(): _finish_bake.call_deferred(region, nav_polygon))
+
+
+func _finish_bake(region: NavigationRegion2D, nav_polygon: NavigationPolygon) -> void:
+	region.navigation_polygon = nav_polygon
+	baking -= 1
+	if baking == 0:
+		nav_version += 1  # both shapes are new: units may retry jobs they couldn't reach
+		# Measured Nov 5 on the laptop: about 0.35 ms on the main thread, 32 ms in the background.
+
+
+## Gathers the outlines for a walkable shape: every floor tile, minus solid furnishings (the baker shrinks
+## it by UNIT_RADIUS so units keep clear of rock). Finished doors belonging to closed_owner are cut out
+## too: each side's doors are open for its own troops and closed to the other side.
+func _walkable_source(closed_owner: String) -> NavigationMeshSourceGeometryData2D:
 	var source := NavigationMeshSourceGeometryData2D.new()
-	# Floor goes in as runs: each unbroken stretch of floor cells along a row is one long outline.
-	# That's several times fewer outlines than one per cell, which keeps rebuilds fast on the big grid.
-	for y in GRID_HEIGHT:
-		var x := 0
-		while x < GRID_WIDTH:
-			if tiles[x][y] != Tile.FLOOR:
-				x += 1
-				continue
-			var run_start := x
-			while x < GRID_WIDTH and tiles[x][y] == Tile.FLOOR:
-				x += 1
-			source.add_traversable_outline(_cells_outline(Vector2i(run_start, y), Vector2i(x - run_start, 1)))
+	# Floor goes in as runs: each unbroken stretch of floor cells along a row is one long outline,
+	# worked out ahead of time by _refresh_rows() and shared by both shapes.
+	for outlines in row_runs:
+		for outline in outlines:
+			source.add_traversable_outline(outline)
 	# Solid furnishings cut holes in the walkable shape (ghosts stay walkable until SOLID_AT).
 	for furnishing in furnishings:
 		var closed_door: bool = furnishing["id"] == "door" and furnishing["built"] \
 			and furnishing.get("owner", "player") == closed_owner
 		if furnishing["solid"] or closed_door:
 			source.add_obstruction_outline(_cells_outline(furnishing["origin"], furnishing["size"]))
-	var nav_polygon := NavigationPolygon.new()
-	nav_polygon.agent_radius = UNIT_RADIUS
-	NavigationServer2D.bake_from_source_geometry_data(nav_polygon, source)
-	return nav_polygon
+	return source
+
+
+## Works out the floor runs again for rows that changed since last time, and only those: digging touches
+## a few rows, not all of them, so this stays cheap. The very first time, every row is done.
+func _refresh_rows() -> void:
+	if row_runs.size() != GRID_HEIGHT:
+		row_runs.resize(GRID_HEIGHT)
+		for y in GRID_HEIGHT:
+			dirty_rows[y] = true
+	for y in dirty_rows:
+		row_runs[y] = _row_outlines(y)
+	dirty_rows.clear()
+
+
+## One outline per unbroken stretch of floor cells in a row. Far fewer outlines than one per cell.
+func _row_outlines(y: int) -> Array:
+	var outlines: Array = []
+	var x := 0
+	while x < GRID_WIDTH:
+		if tiles[x][y] != Tile.FLOOR:
+			x += 1
+			continue
+		var run_start := x
+		while x < GRID_WIDTH and tiles[x][y] == Tile.FLOOR:
+			x += 1
+		outlines.append(_cells_outline(Vector2i(run_start, y), Vector2i(x - run_start, 1)))
+	return outlines
 
 
 ## The outline of a rectangle of cells on the grid (size cells along x and y from first): four corners
