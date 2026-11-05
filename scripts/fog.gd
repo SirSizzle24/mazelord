@@ -23,6 +23,8 @@ var marked_kind := 0  # the fog's extra tile: a mark at full brightness, so your
 var memory: Dictionary = {}  # tile -> its ground kind when last seen
 var memory_overlays: Dictionary = {}  # tile -> color of what stood on it when last seen (if anything)
 var visible_tiles: Dictionary = {}  # tiles in sight right now (used as a set)
+var vis_image: Image  # one pixel per cell: white in sight, black not; the shader blends it smoothly
+var vis_texture: ImageTexture
 var timer := 0.0
 var fog_enabled := true  # debug: switch the fog off to see the whole map
 
@@ -33,20 +35,24 @@ func _ready() -> void:
 	for color in grid.ground_colors():
 		colors.append(color.darkened(MEMORY_DARKEN))
 	marked_kind = colors.size()
-	colors.append(grid.MARKED_COLOR)
+	colors.append(grid.MARKED_TINT)
 	layer.tile_set = TileTextures.build(colors, grid.TILE_WIDTH)
-	layer.material = SurfaceMaterial.make(null)  # remembered ground keeps its texture, dimmed
+	vis_image = Image.create(grid.GRID_WIDTH, grid.GRID_HEIGHT, false, Image.FORMAT_L8)  # starts all black
+	vis_texture = ImageTexture.create_from_image(vis_image)
+	layer.material = SurfaceMaterial.make(null, "floor")  # remembered ground keeps its texture, dimmed
+	_add_fog_settings(layer.material, 1)
 	layer.show_behind_parent = true  # under the remembered furnishings this node draws
 	add_child(layer)
 	layer.position = grid.tile_to_screen(Vector2i.ZERO) - layer.map_to_local(Vector2i.ZERO)
 
 	# Walls stay inside their own cells, so they never cover troops or neighbors, and need no depth sorting.
-	var rock: Color = grid.ROCK_COLOR.lightened(0.15)
-	var deposit: Color = grid.DEPOSIT_COLOR.darkened(0.2)
+	var rock: Color = Color.WHITE  # tints: the wall textures carry the color
+	var deposit: Color = grid.DEPOSIT_TINT
 	var wall_art: Dictionary = TileTextures.build_walls([rock, rock.darkened(MEMORY_DARKEN), deposit,
-		deposit.darkened(MEMORY_DARKEN), grid.MARKED_COLOR], grid.TILE_WIDTH, WALL_FACE_HEIGHT)
+		deposit.darkened(MEMORY_DARKEN), grid.MARKED_TINT], grid.TILE_WIDTH, WALL_FACE_HEIGHT)
 	walls.tile_set = wall_art["tile_set"]
-	walls.material = SurfaceMaterial.make(wall_art["mask"])  # tops and faces textured separately
+	walls.material = SurfaceMaterial.make(wall_art["mask"], "wall_top")  # tops and faces textured separately
+	_add_fog_settings(walls.material, 2)
 	add_child(walls)
 	walls.position = layer.position
 	grid.cell_dug.connect(_on_cell_dug)
@@ -61,6 +67,15 @@ func _ready() -> void:
 	for x in grid.GRID_WIDTH:
 		for y in grid.GRID_HEIGHT:
 			_paint(Vector2i(x, y))
+
+
+## Hands the shader what it needs for smooth fog edges. mode 1 fades the flat fog; mode 2 dims walls.
+func _add_fog_settings(material: ShaderMaterial, mode: int) -> void:
+	material.set_shader_parameter("fog_mode", mode)
+	material.set_shader_parameter("vis_tex", vis_texture)
+	material.set_shader_parameter("grid_cells", Vector2(grid.GRID_WIDTH, grid.GRID_HEIGHT))
+	material.set_shader_parameter("cell_size", float(grid.TILE_WIDTH))
+	material.set_shader_parameter("memory_brightness", 1.0 - MEMORY_DARKEN)
 
 
 func _remember(tile: Vector2i) -> void:
@@ -78,9 +93,8 @@ func _remember(tile: Vector2i) -> void:
 ## seen, or a bright mark), and its wall.
 func _paint(tile: Vector2i) -> void:
 	_paint_wall(tile)
-	if visible_tiles.has(tile):
-		layer.erase_cell(tile)
-		return
+	# Every cell keeps a fog tile, even in sight: the shader makes it see-through there, fading smoothly
+	# at the edge of sight instead of switching per cell.
 	var kind: int = memory.get(tile, grid.Ground.ROCK)
 	if grid.is_marked(tile):
 		kind = marked_kind
@@ -101,9 +115,9 @@ func _paint_wall(tile: Vector2i) -> void:
 	if grid.is_marked(tile):
 		wall = Wall.MARKED  # your own marks always show
 	elif kind == grid.Ground.DEPOSIT_ROCK:
-		wall = Wall.DEPOSIT if in_sight else Wall.DEPOSIT_DIM
+		wall = Wall.DEPOSIT  # dimmed out of sight by the shader, smoothly
 	else:
-		wall = Wall.ROCK if in_sight else Wall.ROCK_DIM
+		wall = Wall.ROCK
 	# Faces only where they face floor you know about: lower-left looks at (x, y + 1), lower-right at
 	# (x + 1, y), and the inside-corner piece at the diagonal (x + 1, y + 1). The atlas row is the
 	# bit flag of which show (1 left, 2 right, 4 corner).
@@ -178,6 +192,8 @@ func _process(delta: float) -> void:
 	visible_tiles = now
 	for tile in changed:
 		_paint_with_neighbors(tile)
+		vis_image.set_pixelv(tile, Color.WHITE if now.has(tile) else Color.BLACK)
+	vis_texture.update(vis_image)  # send the changed visibility to the graphics card
 	queue_redraw()  # remembered furnishings and items may have come into or out of view
 
 
@@ -194,6 +210,11 @@ func is_in_sight(tile: Vector2i) -> bool:
 ## Debug: hides or shows the fog. With it off, every tile counts as known.
 func set_fog_enabled(enabled: bool) -> void:
 	fog_enabled = enabled
+	vis_image.fill(Color.BLACK if enabled else Color.WHITE)  # with the fog off, everything counts as seen
+	if enabled:
+		for tile in visible_tiles:
+			vis_image.set_pixelv(tile, Color.WHITE)
+	vis_texture.update(vis_image)
 	layer.visible = enabled  # hide the flat fog, but keep the walls
 	for x in grid.GRID_WIDTH:
 		for y in grid.GRID_HEIGHT:

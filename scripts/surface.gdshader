@@ -10,12 +10,23 @@ uniform sampler2D mask_tex : filter_nearest;
 uniform sampler2D top_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D face_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D macro_tex : repeat_enable, filter_linear_mipmap;
-uniform float top_scale = 512.0;  // world pixels per repeat of the top texture
-uniform float face_scale = 256.0;  // world pixels along a wall per repeat of the face texture
+// Scales are world pixels per repeat. A 2048 texture over 1024 world pixels = 2 texture pixels per world
+// pixel, so 128 per 64-pixel cell: sharp even at the camera's 2x zoom.
+uniform float top_scale = 1024.0;  // world pixels per repeat of the floor and wall-top textures
+uniform float face_scale = 1024.0;  // world pixels along a wall per repeat of the face texture
+uniform float face_height = 48.0;  // must match WALL_FACE_HEIGHT in fog.gd, to keep the same density
 uniform float macro_scale = 3000.0;  // world pixels per repeat of the variation texture
-uniform float detail_strength = 0.3;  // how strongly the textures change the base colors
-uniform float macro_strength = 0.15;
+uniform float macro_strength = 0.15;  // how much brightness drifts across big areas
+uniform float hue_strength = 0.04;  // how much the color drifts warmer or cooler across big areas
 uniform float ridge_highlight = 0.12;  // extra light along the top edge of faces
+
+// Smooth fog edges. vis_tex has one pixel per cell, white where a troop can see; read with linear
+// filtering, it blends between neighboring cells, giving a smooth value from 1 (in sight) to 0.
+uniform int fog_mode = 0;  // 0: no fog effect; 1: the flat fog, fading out where visible; 2: walls, dimming where not
+uniform sampler2D vis_tex : filter_linear;
+uniform vec2 grid_cells = vec2(180.0, 180.0);  // the grid's size in cells
+uniform float cell_size = 64.0;  // a cell's width in pixels
+uniform float memory_brightness = 0.45;  // how bright remembered walls are, compared with lit ones
 
 varying vec2 world;
 
@@ -23,24 +34,56 @@ void vertex() {
 	world = (MODEL_MATRIX * vec4(VERTEX, 0.0, 1.0)).xy;
 }
 
+// Rotates a 2D point; used to sample a second, turned copy of a texture.
+vec2 turn(vec2 p, float angle) {
+	return vec2(p.x * cos(angle) - p.y * sin(angle), p.x * sin(angle) + p.y * cos(angle));
+}
+
+// Reads a texture twice, at different scales and turns, and blends between the two copies by a slow
+// noise. Wherever you look it's a different mix, so the repeat never lines up the same way twice.
+vec3 blended(sampler2D tex, vec2 p, vec2 at) {
+	vec3 first = texture(tex, p).rgb;
+	vec3 second = texture(tex, turn(p, 0.6) * 0.73 + vec2(0.31, 0.77)).rgb;
+	float mix_amount = smoothstep(0.35, 0.65, texture(macro_tex, at / (macro_scale * 0.6) + vec2(0.5)).r);
+	return mix(first, second, mix_amount);
+}
+
+// How visible a world position is, from 0 to 1, by turning it back into grid coordinates (the reverse
+// of tile_to_screen) and reading the visibility image there.
+float visibility(vec2 at) {
+	vec2 scaled = at / (cell_size * 0.5);
+	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5;
+	return smoothstep(0.0, 1.0, texture(vis_tex, (cell + vec2(0.5)) / grid_cells).r);
+}
+
 void fragment() {
-	vec4 base = texture(TEXTURE, UV);
-	float detail = texture(top_tex, world / top_scale).r;
+	vec4 base = texture(TEXTURE, UV);  // the tile's tint: white, a gray for memory or shading, or a hue
+	vec3 surface = blended(top_tex, world / top_scale, world);
 	float ridge = 0.0;
 	if (use_mask) {
 		vec4 part = texture(mask_tex, UV);
 		if (part.r < 0.5) {
 			// A face. Distance along the wall runs down-right for a lower-left face and down-left for a
-			// lower-right one; the mask's blue is the height up the face.
+			// lower-right one; the mask's blue is the height up the face, at the same density.
 			vec2 along = part.g < 0.5 ? vec2(0.7071, 0.7071) : vec2(-0.7071, 0.7071);
 			float u = dot(world, along) / face_scale;
-			detail = texture(face_tex, vec2(u, part.b * 0.25)).r;
+			surface = blended(face_tex, vec2(u, part.b * face_height / face_scale), world);
 			ridge = smoothstep(0.85, 1.0, part.b);
 		}
 	}
-	float macro = texture(macro_tex, world / macro_scale).r;
-	vec3 color = base.rgb * (1.0 - detail_strength / 2.0 + detail_strength * detail);
-	color *= 1.0 - macro_strength / 2.0 + macro_strength * macro;
+	// Slow drifts across the map: brightness, and a touch warmer or cooler, from two different
+	// readings of the variation texture.
+	float bright = texture(macro_tex, world / macro_scale).r;
+	float warm = texture(macro_tex, world / (macro_scale * 1.9) + vec2(0.23, 0.61)).r;
+	vec3 color = base.rgb * surface;
+	color *= 1.0 - macro_strength / 2.0 + macro_strength * bright;
+	color *= vec3(1.0) + hue_strength * (warm - 0.5) * vec3(2.0, 0.0, -2.0);
 	color += ridge * ridge_highlight;
-	COLOR = vec4(color, base.a);
+	float alpha = base.a;
+	if (fog_mode == 1) {
+		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see
+	} else if (fog_mode == 2) {
+		color *= mix(memory_brightness, 1.0, visibility(world));  // walls dim smoothly out of sight
+	}
+	COLOR = vec4(color, alpha);
 }

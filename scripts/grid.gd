@@ -28,6 +28,10 @@ const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
 const MARKED_COLOR := Color(0.55, 0.38, 0.25)  # rock marked for digging
 const DEPOSIT_COLOR := Color(0.30, 0.75, 0.95)  # a mana deposit, in rock or on open floor
 const LAIR_COLOR := Color(0.80, 0.15, 0.15)  # a monster lair (a marker until combat exists)
+# Tints for textured surfaces (see ground_colors): white leaves a texture as painted.
+const MARKED_TINT := Color(1.0, 0.78, 0.55)  # warm orange: marked for digging
+const DEPOSIT_TINT := Color(0.65, 0.88, 1.0)  # icy blue: a mana deposit
+const LAIR_TINT := Color(1.0, 0.55, 0.55)  # red: a monster lair
 const ITEM_COLORS := {"mana_cache": Color(0.45, 0.80, 1.0), "food_cache": Color(0.90, 0.75, 0.30),
 	"treasure": Color(0.75, 0.45, 0.95), "lore": Color(0.95, 0.95, 0.90)}
 
@@ -107,7 +111,7 @@ func _ready() -> void:
 		tiles.append(column)
 
 	ground.tile_set = TileTextures.build(ground_colors(), TILE_WIDTH)
-	ground.material = SurfaceMaterial.make(null)  # world-space texture detail
+	ground.material = SurfaceMaterial.make(null, "floor")  # world-space texture detail
 	ground.show_behind_parent = true  # drawn under this node's own drawing (furnishings, items)
 	add_child(ground)
 	# Line the layer's cells up exactly with tile_to_screen(), whatever offset Godot's layout uses.
@@ -880,8 +884,10 @@ func _draw() -> void:
 
 
 ## The placeholder color for each Ground kind, in enum order. The fog builds a darkened copy.
+## These are tints, not colors: the textures carry the real colors and the shader multiplies these onto
+## them, so white shows a texture exactly as painted and anything else tints it.
 func ground_colors() -> Array:
-	return [ROCK_COLOR, FLOOR_COLOR, MARKED_COLOR, DEPOSIT_COLOR.darkened(0.35), DEPOSIT_COLOR, LAIR_COLOR]
+	return [Color.WHITE, Color.WHITE, MARKED_TINT, DEPOSIT_TINT.darkened(0.15), DEPOSIT_TINT, LAIR_TINT]
 
 
 ## Which kind of ground a tile shows: marks first, then deposits and lairs, then rock or floor.
