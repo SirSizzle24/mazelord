@@ -43,8 +43,13 @@ static func build(colors: Array, size: int) -> TileSet:
 ## the same height, so a row of walls forms one continuous face, and its top edge one straight ridge.
 ## There are no outlines on cell edges, so walls side by side blend into one surface; the only line
 ## drawn is the ridge where the top meets a face.
-static func build_walls(colors: Array, size: int, face_height: float) -> TileSet:
+## Alongside the colors, it paints a matching mask image, with the same layout, telling the surface
+## shader what each pixel is: red = top; otherwise a face, with green saying which (0.25 for a
+## lower-left face, 0.75 for a lower-right one) and blue its height up the face (0 at the base, 1 at
+## the ridge). Returns {"tile_set": the TileSet, "mask": the mask texture}.
+static func build_walls(colors: Array, size: int, face_height: float) -> Dictionary:
 	var image := Image.create(size * colors.size(), size * 8, false, Image.FORMAT_RGBA8)
+	var mask := Image.create(size * colors.size(), size * 8, false, Image.FORMAT_RGBA8)
 	var half := size / 2.0
 	for i in colors.size():
 		var top: Color = colors[i]
@@ -64,6 +69,7 @@ static func build_walls(colors: Array, size: int, face_height: float) -> TileSet
 					var above_left := (half + x) - y
 					var above_right := (half + size - x) - y
 					var color: Color = top
+					var part := Color(1, 0, 0, 1)  # the mask: top, until a face says otherwise
 					if corner_open:
 						# Continue the neighbors' faces into the bottom corner. Left of the corner sits the up-left
 						# wall's lower-right face, measured from the line through the corner going down-left;
@@ -72,10 +78,12 @@ static func build_walls(colors: Array, size: int, face_height: float) -> TileSet
 							var above_corner := (size + half - x) - y
 							if above_corner < face_height:
 								color = top.darkened(0.45) if above_corner < face_height - 1.5 else ridge
+								part = Color(0, 0.75, above_corner / face_height, 1)  # continues a lower-right face
 						else:
 							var above_corner := (size + x - half) - y
 							if above_corner < face_height:
 								color = top.darkened(0.25) if above_corner < face_height - 1.5 else ridge
+								part = Color(0, 0.25, above_corner / face_height, 1)  # continues a lower-left face
 					var in_left := left_open and above_left < face_height
 					var in_right := right_open and above_right < face_height
 					if in_left and in_right:
@@ -85,9 +93,12 @@ static func build_walls(colors: Array, size: int, face_height: float) -> TileSet
 						in_right = not in_left
 					if in_left:
 						color = top.darkened(0.25) if above_left < face_height - 1.5 else ridge
+						part = Color(0, 0.25, above_left / face_height, 1)
 					elif in_right:
 						color = top.darkened(0.45) if above_right < face_height - 1.5 else ridge
+						part = Color(0, 0.75, above_right / face_height, 1)
 					image.set_pixel(i * size + px, faces * size + py, color)
+					mask.set_pixel(i * size + px, faces * size + py, part)
 
 	var source := TileSetAtlasSource.new()
 	source.texture = ImageTexture.create_from_image(image)
@@ -101,4 +112,4 @@ static func build_walls(colors: Array, size: int, face_height: float) -> TileSet
 	tile_set.tile_layout = TileSet.TILE_LAYOUT_DIAMOND_DOWN
 	tile_set.tile_size = Vector2i(size, size)
 	tile_set.add_source(source, 0)
-	return tile_set
+	return {"tile_set": tile_set, "mask": ImageTexture.create_from_image(mask)}

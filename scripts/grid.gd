@@ -17,6 +17,7 @@ enum Tile { ROCK, FLOOR }
 enum Ground { ROCK, FLOOR, MARKED, DEPOSIT_ROCK, DEPOSIT_FLOOR, LAIR }
 
 const TileTextures = preload("res://scripts/tile_textures.gd")
+const SurfaceMaterial = preload("res://scripts/surface_material.gd")
 
 signal layout_changed  # sent when floor is dug or a furnishing is finished, so rooms can be re-checked
 signal marks_changed(tile: Vector2i)  # sent when a dig mark is added or removed, so the fog can show it
@@ -106,6 +107,7 @@ func _ready() -> void:
 		tiles.append(column)
 
 	ground.tile_set = TileTextures.build(ground_colors(), TILE_WIDTH)
+	ground.material = SurfaceMaterial.make(null)  # world-space texture detail
 	ground.show_behind_parent = true  # drawn under this node's own drawing (furnishings, items)
 	add_child(ground)
 	# Line the layer's cells up exactly with tile_to_screen(), whatever offset Godot's layout uses.

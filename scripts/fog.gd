@@ -6,6 +6,7 @@ extends Node2D
 ## The fog is a TileMapLayer of darkened ground tiles, and only cells whose visibility changed are updated.
 
 const TileTextures = preload("res://scripts/tile_textures.gd")
+const SurfaceMaterial = preload("res://scripts/surface_material.gd")
 const SIGHT_RADIUS := 15  # cells (5 blocks) a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
 const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live ones
@@ -34,6 +35,7 @@ func _ready() -> void:
 	marked_kind = colors.size()
 	colors.append(grid.MARKED_COLOR)
 	layer.tile_set = TileTextures.build(colors, grid.TILE_WIDTH)
+	layer.material = SurfaceMaterial.make(null)  # remembered ground keeps its texture, dimmed
 	layer.show_behind_parent = true  # under the remembered furnishings this node draws
 	add_child(layer)
 	layer.position = grid.tile_to_screen(Vector2i.ZERO) - layer.map_to_local(Vector2i.ZERO)
@@ -41,8 +43,10 @@ func _ready() -> void:
 	# Walls stay inside their own cells, so they never cover troops or neighbors, and need no depth sorting.
 	var rock: Color = grid.ROCK_COLOR.lightened(0.15)
 	var deposit: Color = grid.DEPOSIT_COLOR.darkened(0.2)
-	walls.tile_set = TileTextures.build_walls([rock, rock.darkened(MEMORY_DARKEN), deposit,
+	var wall_art: Dictionary = TileTextures.build_walls([rock, rock.darkened(MEMORY_DARKEN), deposit,
 		deposit.darkened(MEMORY_DARKEN), grid.MARKED_COLOR], grid.TILE_WIDTH, WALL_FACE_HEIGHT)
+	walls.tile_set = wall_art["tile_set"]
+	walls.material = SurfaceMaterial.make(wall_art["mask"])  # tops and faces textured separately
 	add_child(walls)
 	walls.position = layer.position
 	grid.cell_dug.connect(_on_cell_dug)
