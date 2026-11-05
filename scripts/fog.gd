@@ -9,11 +9,15 @@ const TileTextures = preload("res://scripts/tile_textures.gd")
 const SIGHT_RADIUS := 15  # cells (5 blocks) a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
 const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live ones
+const WALL_FACE_HEIGHT := 32.0  # pixels of front face along a wall's lower edge; taller looks taller
+## The wall tiles, in atlas order: lit and remembered rock, lit and remembered deposit rock, and a mark.
+enum Wall { ROCK, ROCK_DIM, DEPOSIT, DEPOSIT_DIM, MARKED }
 
 @export var grid: Node2D
 @export var rooms: Node
 
-var layer := TileMapLayer.new()
+var layer := TileMapLayer.new()  # flat fog over the ground
+var walls := TileMapLayer.new()  # rock with height, drawn inside each cell; only where rock is known
 var marked_kind := 0  # the fog's extra tile: a mark at full brightness, so your marks always show
 var memory: Dictionary = {}  # tile -> its ground kind when last seen
 var memory_overlays: Dictionary = {}  # tile -> color of what stood on it when last seen (if anything)
@@ -33,6 +37,15 @@ func _ready() -> void:
 	layer.show_behind_parent = true  # under the remembered furnishings this node draws
 	add_child(layer)
 	layer.position = grid.tile_to_screen(Vector2i.ZERO) - layer.map_to_local(Vector2i.ZERO)
+
+	# Walls stay inside their own cells, so they never cover troops or neighbors, and need no depth sorting.
+	var rock: Color = grid.ROCK_COLOR.lightened(0.15)
+	var deposit: Color = grid.DEPOSIT_COLOR.darkened(0.2)
+	walls.tile_set = TileTextures.build_walls([rock, rock.darkened(MEMORY_DARKEN), deposit,
+		deposit.darkened(MEMORY_DARKEN), grid.MARKED_COLOR], grid.TILE_WIDTH, WALL_FACE_HEIGHT)
+	add_child(walls)
+	walls.position = layer.position
+	grid.cell_dug.connect(_on_cell_dug)
 
 	grid.marks_changed.connect(_paint)  # marks show through the fog
 	# Only the starting room, and the rock around it, start out known. (Not every floor tile:
@@ -57,9 +70,10 @@ func _remember(tile: Vector2i) -> void:
 		memory_overlays.erase(tile)
 
 
-## Updates one fog cell: clear if in sight; otherwise the remembered ground (dim rock if never seen),
-## or a bright mark if you've marked it.
+## Updates one cell: the flat fog (clear if in sight; otherwise the remembered ground, dim rock if never
+## seen, or a bright mark), and its wall.
 func _paint(tile: Vector2i) -> void:
+	_paint_wall(tile)
 	if visible_tiles.has(tile):
 		layer.erase_cell(tile)
 		return
@@ -67,6 +81,64 @@ func _paint(tile: Vector2i) -> void:
 	if grid.is_marked(tile):
 		kind = marked_kind
 	layer.set_cell(tile, 0, Vector2i(kind, 0))
+
+
+## A wall stands only where you know there's rock: bright in sight, dim from memory, and none in the
+## unknown, so the gaps between walls can't give hidden caves away.
+func _paint_wall(tile: Vector2i) -> void:
+	var in_sight := visible_tiles.has(tile) or not fog_enabled
+	var kind: int = grid.ground_kind(tile) if in_sight else memory.get(tile, -1)
+	var is_rock: bool = kind == grid.Ground.ROCK or kind == grid.Ground.DEPOSIT_ROCK \
+		or (kind == grid.Ground.MARKED and not grid.is_floor(tile) if in_sight else kind == grid.Ground.MARKED)
+	if not is_rock:
+		walls.erase_cell(tile)
+		return
+	var wall: int
+	if grid.is_marked(tile):
+		wall = Wall.MARKED  # your own marks always show
+	elif kind == grid.Ground.DEPOSIT_ROCK:
+		wall = Wall.DEPOSIT if in_sight else Wall.DEPOSIT_DIM
+	else:
+		wall = Wall.ROCK if in_sight else Wall.ROCK_DIM
+	# Faces only where they face floor you know about: lower-left looks at (x, y + 1), lower-right at
+	# (x + 1, y), and the inside-corner piece at the diagonal (x + 1, y + 1). The atlas row is the
+	# bit flag of which show (1 left, 2 right, 4 corner).
+	var faces := 0
+	if _known_floor(tile + Vector2i(0, 1)):
+		faces += 1
+	if _known_floor(tile + Vector2i(1, 0)):
+		faces += 2
+	if _known_floor(tile + Vector2i(1, 1)):
+		faces += 4
+	walls.set_cell(tile, 0, Vector2i(wall, faces))
+
+
+## True if you know this cell is open floor: live in sight, or remembered. Unknown counts as rock, so
+## a wall's face never gives away a hidden cave.
+func _known_floor(tile: Vector2i) -> bool:
+	if not grid.is_in_bounds(tile):
+		return false
+	if visible_tiles.has(tile) or not fog_enabled:
+		return grid.is_floor(tile)
+	var kind: int = memory.get(tile, -1)
+	return kind == grid.Ground.FLOOR or kind == grid.Ground.DEPOSIT_FLOOR or kind == grid.Ground.LAIR
+
+
+## Redraws the cell and the three walls whose faces look at it (up-left, up-right, and straight up on
+## screen), since what they show depends on this cell.
+func _paint_with_neighbors(tile: Vector2i) -> void:
+	_paint(tile)
+	for wall_cell in [tile - Vector2i(0, 1), tile - Vector2i(1, 0), tile - Vector2i(1, 1)]:
+		if grid.is_in_bounds(wall_cell):
+			_paint_wall(wall_cell)
+
+
+## Rock became floor. In sight, the wall comes down now; out of sight, the remembered wall stays
+## until a troop looks again (the last-image rule).
+func _on_cell_dug(tile: Vector2i) -> void:
+	if visible_tiles.has(tile) or not fog_enabled:
+		_remember(tile)
+		_paint_with_neighbors(tile)
 
 
 func _process(delta: float) -> void:
@@ -101,7 +173,7 @@ func _process(delta: float) -> void:
 		return
 	visible_tiles = now
 	for tile in changed:
-		_paint(tile)
+		_paint_with_neighbors(tile)
 	queue_redraw()  # remembered furnishings and items may have come into or out of view
 
 
@@ -118,7 +190,11 @@ func is_in_sight(tile: Vector2i) -> bool:
 ## Debug: hides or shows the fog. With it off, every tile counts as known.
 func set_fog_enabled(enabled: bool) -> void:
 	fog_enabled = enabled
-	visible = enabled
+	layer.visible = enabled  # hide the flat fog, but keep the walls
+	for x in grid.GRID_WIDTH:
+		for y in grid.GRID_HEIGHT:
+			_paint_wall(Vector2i(x, y))  # with the fog off, every rock cell shows its wall
+	queue_redraw()
 
 
 ## Adds tiles and the ring of tiles around them, so a lit room's walls show too.
@@ -156,6 +232,8 @@ func _cast_ray(from: Vector2i, to: Vector2i, into: Dictionary) -> void:
 
 ## Remembered furnishings and items, darkened, on top of the fog tiles.
 func _draw() -> void:
+	if not fog_enabled:
+		return
 	for tile in memory_overlays:
 		if not visible_tiles.has(tile):
 			var remembered: Color = memory_overlays[tile]

@@ -20,6 +20,7 @@ const TileTextures = preload("res://scripts/tile_textures.gd")
 
 signal layout_changed  # sent when floor is dug or a furnishing is finished, so rooms can be re-checked
 signal marks_changed(tile: Vector2i)  # sent when a dig mark is added or removed, so the fog can show it
+signal cell_dug(tile: Vector2i)  # sent when rock becomes floor, so walls can update
 
 const ROCK_COLOR := Color(0.35, 0.33, 0.30)
 const FLOOR_COLOR := Color(0.75, 0.72, 0.65)
@@ -715,6 +716,7 @@ func dig(tile: Vector2i) -> void:
 		tiles[tile.x][tile.y] = Tile.FLOOR
 		_update_ground(tile)
 		dirty_rows[tile.y] = true  # this row's floor runs need working out again
+		cell_dug.emit(tile)
 		nav_dirty = true  # the walkable shape is out of date
 		queue_redraw()  # the data changed, so the picture must update
 		layout_changed.emit()
