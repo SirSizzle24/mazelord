@@ -10,6 +10,13 @@ const SurfaceMaterial = preload("res://scripts/surface_material.gd")
 const SIGHT_RADIUS := 15  # cells (5 blocks) a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
 const MEMORY_DARKEN := 0.30  # how much darker remembered tiles look than live ones
+## How bright never-seen rock is, so a tunnel that runs into the unknown looks different from a real
+## dead end (seen rock stays at memory brightness). Try 0.35 for "darker unknown", 0.05 for a black void.
+const UNKNOWN_BRIGHTNESS := 0.25
+## The frontier: never-seen cells right next to floor you know. They go darker still, fading into the
+## walls around them, so a tunnel that leads into the unknown ends in a dark mouth, and a real dead end
+## (seen rock) doesn't.
+const FRONTIER_BRIGHTNESS := 0.05
 const WALL_FACE_HEIGHT := 32.0  # pixels of front face along a wall's lower edge; taller looks taller
 ## The wall tiles, in atlas order: lit and remembered rock, lit and remembered deposit rock, and a mark.
 enum Wall { ROCK, ROCK_DIM, DEPOSIT, DEPOSIT_DIM, MARKED }
@@ -23,8 +30,11 @@ var marked_kind := 0  # the fog's extra tile: a mark at full brightness, so your
 var memory: Dictionary = {}  # tile -> its ground kind when last seen
 var memory_overlays: Dictionary = {}  # tile -> color of what stood on it when last seen (if anything)
 var visible_tiles: Dictionary = {}  # tiles in sight right now (used as a set)
-var vis_image: Image  # one pixel per cell: white in sight, black not; the shader blends it smoothly
+## One pixel per cell; the shader blends between cells smoothly. Red: in sight now. Green: ever seen.
+## Blue: marked for digging (marks stay bright even in the unknown). Alpha: the frontier.
+var vis_image: Image
 var vis_texture: ImageTexture
+var vis_dirty := false  # the image changed and needs sending to the graphics card
 var timer := 0.0
 var fog_enabled := true  # debug: switch the fog off to see the whole map
 
@@ -37,7 +47,7 @@ func _ready() -> void:
 	marked_kind = colors.size()
 	colors.append(grid.MARKED_TINT)
 	layer.tile_set = TileTextures.build(colors, grid.TILE_WIDTH)
-	vis_image = Image.create(grid.GRID_WIDTH, grid.GRID_HEIGHT, false, Image.FORMAT_L8)  # starts all black
+	vis_image = Image.create(grid.GRID_WIDTH, grid.GRID_HEIGHT, false, Image.FORMAT_RGBA8)  # starts all zero
 	vis_texture = ImageTexture.create_from_image(vis_image)
 	layer.material = SurfaceMaterial.make(null, "floor")  # remembered ground keeps its texture, dimmed
 	_add_fog_settings(layer.material, 1)
@@ -67,6 +77,8 @@ func _ready() -> void:
 	for x in grid.GRID_WIDTH:
 		for y in grid.GRID_HEIGHT:
 			_paint(Vector2i(x, y))
+	vis_texture.update(vis_image)
+	vis_dirty = false
 
 
 ## Hands the shader what it needs for smooth fog edges. mode 1 fades the flat fog; mode 2 dims walls.
@@ -76,12 +88,24 @@ func _add_fog_settings(material: ShaderMaterial, mode: int) -> void:
 	material.set_shader_parameter("grid_cells", Vector2(grid.GRID_WIDTH, grid.GRID_HEIGHT))
 	material.set_shader_parameter("cell_size", float(grid.TILE_WIDTH))
 	material.set_shader_parameter("memory_brightness", 1.0 - MEMORY_DARKEN)
+	material.set_shader_parameter("unknown_brightness", UNKNOWN_BRIGHTNESS)
+	material.set_shader_parameter("frontier_brightness", FRONTIER_BRIGHTNESS)
 
 
 func _remember(tile: Vector2i) -> void:
 	if not grid.is_in_bounds(tile):
 		return
-	memory[tile] = grid.ground_kind(tile)
+	var kind: int = grid.ground_kind(tile)
+	var changed: bool = memory.get(tile, -1) != kind
+	memory[tile] = kind
+	_set_vis(tile, 1, 1.0)  # seen
+	if changed:
+		# Only when the memory really changed: this runs for every cell in sight, several times a second.
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var near := tile + Vector2i(dx, dy)
+				if grid.is_in_bounds(near):
+					_set_vis(near, 3, 1.0 if _is_frontier(near) else 0.0)
 	var overlay: Color = grid.overlay_color(tile)
 	if overlay.a > 0.0:
 		memory_overlays[tile] = overlay
@@ -108,6 +132,7 @@ func _paint_wall(tile: Vector2i) -> void:
 	var kind: int = grid.ground_kind(tile) if in_sight else memory.get(tile, grid.Ground.ROCK)
 	var is_rock: bool = kind == grid.Ground.ROCK or kind == grid.Ground.DEPOSIT_ROCK \
 		or (kind == grid.Ground.MARKED and not grid.is_floor(tile) if in_sight else kind == grid.Ground.MARKED)
+	_set_vis(tile, 2, 1.0 if grid.is_marked(tile) else 0.0)
 	if not is_rock:
 		walls.erase_cell(tile)
 		return
@@ -129,6 +154,29 @@ func _paint_wall(tile: Vector2i) -> void:
 	if _known_floor(tile + Vector2i(1, 1)):
 		faces += 4
 	walls.set_cell(tile, 0, Vector2i(wall, faces))
+
+
+## True if this cell has never been seen but touches floor you know about (sides or corners).
+func _is_frontier(tile: Vector2i) -> bool:
+	if memory.has(tile) or not fog_enabled:
+		return false
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var kind: int = memory.get(tile + Vector2i(dx, dy), -1)
+			if kind == grid.Ground.FLOOR or kind == grid.Ground.DEPOSIT_FLOOR or kind == grid.Ground.LAIR:
+				return true
+	return false
+
+
+## Sets one channel of a cell's pixel in the visibility image (0 in sight, 1 seen, 2 marked).
+func _set_vis(tile: Vector2i, channel: int, value: float) -> void:
+	# (0 in sight, 1 seen, 2 marked, 3 frontier)
+	var pixel := vis_image.get_pixelv(tile)
+	if pixel[channel] == value:
+		return
+	pixel[channel] = value
+	vis_image.set_pixelv(tile, pixel)
+	vis_dirty = true
 
 
 ## True if you know this cell is open floor: live in sight, or remembered. Unknown counts as rock, so
@@ -160,6 +208,9 @@ func _on_cell_dug(tile: Vector2i) -> void:
 
 
 func _process(delta: float) -> void:
+	if vis_dirty:
+		vis_texture.update(vis_image)  # send changed visibility, memory and marks to the graphics card
+		vis_dirty = false
 	timer += delta
 	if timer < UPDATE_INTERVAL:
 		return
@@ -168,11 +219,13 @@ func _process(delta: float) -> void:
 	var now: Dictionary = {}
 	for unit in get_tree().get_nodes_in_group("units"):
 		_add_sight(grid.screen_to_tile(unit.position), now)
+	_add_walls_of_seen_floor(now)
 	# The starting room and every finished room stay lit, walls included.
 	_add_lit(grid.starting_room, now)
 	for room in rooms.rooms:
 		if room["type"] != "":
 			_add_lit(room["tiles"].keys(), now)
+	_add_walls_behind(now)
 
 	for tile in now:
 		_remember(tile)  # keep the memory fresh while it's in view
@@ -192,8 +245,7 @@ func _process(delta: float) -> void:
 	visible_tiles = now
 	for tile in changed:
 		_paint_with_neighbors(tile)
-		vis_image.set_pixelv(tile, Color.WHITE if now.has(tile) else Color.BLACK)
-	vis_texture.update(vis_image)  # send the changed visibility to the graphics card
+		_set_vis(tile, 0, 1.0 if now.has(tile) else 0.0)
 	queue_redraw()  # remembered furnishings and items may have come into or out of view
 
 
@@ -210,16 +262,34 @@ func is_in_sight(tile: Vector2i) -> bool:
 ## Debug: hides or shows the fog. With it off, every tile counts as known.
 func set_fog_enabled(enabled: bool) -> void:
 	fog_enabled = enabled
-	vis_image.fill(Color.BLACK if enabled else Color.WHITE)  # with the fog off, everything counts as seen
-	if enabled:
-		for tile in visible_tiles:
-			vis_image.set_pixelv(tile, Color.WHITE)
-	vis_texture.update(vis_image)
+	for x in grid.GRID_WIDTH:
+		for y in grid.GRID_HEIGHT:
+			var tile := Vector2i(x, y)
+			# With the fog off, everything counts as in sight and seen.
+			var lit := 1.0 if not enabled or visible_tiles.has(tile) else 0.0
+			var seen := 1.0 if not enabled or memory.has(tile) else 0.0
+			var mark: float = 1.0 if grid.is_marked(tile) else 0.0
+			var edge: float = 1.0 if _is_frontier(tile) else 0.0
+			vis_image.set_pixelv(tile, Color(lit, seen, mark, edge))
+	vis_dirty = true
 	layer.visible = enabled  # hide the flat fog, but keep the walls
 	for x in grid.GRID_WIDTH:
 		for y in grid.GRID_HEIGHT:
 			_paint_wall(Vector2i(x, y))  # with the fog off, every rock cell shows its wall
 	queue_redraw()
+
+
+## Seeing a floor cell means seeing the rock around it (sides and corners): rays can slip past the
+## corner cells of a diagonal tunnel. Only rock is added, so an opening into an unseen cave stays dark.
+func _add_walls_behind(into: Dictionary) -> void:
+	for tile in into.keys():  # a copy: the loop adds to into
+		if not grid.is_floor(tile):
+			continue
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var near: Vector2i = tile + Vector2i(dx, dy)
+				if grid.is_in_bounds(near) and not grid.is_floor(near):
+					into[near] = true
 
 
 ## Adds tiles and the ring of tiles around them, so a lit room's walls show too.
@@ -241,6 +311,22 @@ func _add_sight(center: Vector2i, into: Dictionary) -> void:
 	for i in range(-SIGHT_RADIUS, SIGHT_RADIUS + 1):
 		for edge in [Vector2i(i, -SIGHT_RADIUS), Vector2i(i, SIGHT_RADIUS), Vector2i(-SIGHT_RADIUS, i), Vector2i(SIGHT_RADIUS, i)]:
 			_cast_ray(center, center + edge, into)
+
+
+## If you can see a floor cell, you can see the walls right around it. Rays move in steps and can slip
+## past a wall cell diagonally, leaving a gap of unseen wall along a tunnel you can see the whole floor of.
+func _add_walls_of_seen_floor(into: Dictionary) -> void:
+	var walls_seen: Array[Vector2i] = []
+	for tile in into:
+		if not grid.is_floor(tile):
+			continue
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var near: Vector2i = tile + Vector2i(dx, dy)
+				if grid.is_in_bounds(near) and not into.has(near) and not grid.is_floor(near):
+					walls_seen.append(near)
+	for tile in walls_seen:
+		into[tile] = true
 
 
 func _cast_ray(from: Vector2i, to: Vector2i, into: Dictionary) -> void:

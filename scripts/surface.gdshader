@@ -34,6 +34,8 @@ uniform sampler2D vis_tex : filter_linear;
 uniform vec2 grid_cells = vec2(180.0, 180.0);  // the grid's size in cells
 uniform float cell_size = 64.0;  // a cell's width in pixels
 uniform float memory_brightness = 0.45;  // how bright remembered walls are, compared with lit ones
+uniform float unknown_brightness = 0.35;  // how bright never-seen walls are (marks stay at memory brightness)
+uniform float frontier_brightness = 0.05;  // never-seen cells next to known floor: darker still, fading out
 
 // Cell lines, for digging and building. Ground and fog only (walls never get them).
 uniform bool show_lines = false;
@@ -59,12 +61,26 @@ vec4 blended(sampler2D tex, vec2 p, vec2 at) {
 	return mix(first, second, mix_amount);
 }
 
-// How visible a world position is, from 0 to 1, by turning it back into grid coordinates (the reverse
-// of tile_to_screen) and reading the visibility image there.
-float visibility(vec2 at) {
+// The visibility image at a world position, by turning it back into grid coordinates (the reverse of
+// tile_to_screen) and reading there, each 0 to 1 and smooth between cells: r in sight, g ever seen,
+// b marked.
+vec3 visibility(vec2 at) {
 	vec2 scaled = at / (cell_size * 0.5);
 	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5;
-	return smoothstep(0.0, 1.0, texture(vis_tex, (cell + vec2(0.5)) / grid_cells).r);
+	return smoothstep(vec3(0.0), vec3(1.0), texture(vis_tex, (cell + vec2(0.5)) / grid_cells).rgb);
+}
+
+// How much of the frontier's darkness reaches here, 0 to 1: four readings half a cell apart, averaged
+// (the mycelium trick), so it fades over two cells into the walls around it.
+float frontier(vec2 at) {
+	vec2 scaled = at / (cell_size * 0.5);
+	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5 + vec2(0.5);
+	float total = 0.0;
+	total += texture(vis_tex, (cell + vec2(-0.5, -0.5)) / grid_cells).a;
+	total += texture(vis_tex, (cell + vec2(0.5, -0.5)) / grid_cells).a;
+	total += texture(vis_tex, (cell + vec2(-0.5, 0.5)) / grid_cells).a;
+	total += texture(vis_tex, (cell + vec2(0.5, 0.5)) / grid_cells).a;
+	return total / 4.0;
 }
 
 // How much of a cell line is here, from 0 to 1. Lines stay about one screen pixel wide at any zoom,
@@ -143,9 +159,16 @@ void fragment() {
 		alpha *= cover.x;
 	}
 	if (fog_mode == 1) {
-		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see
+		alpha *= 1.0 - visibility(world).r;  // the flat fog fades away where troops can see
 	} else if (fog_mode == 2) {
-		color *= mix(memory_brightness, 1.0, visibility(world));  // walls dim smoothly out of sight
+		// Walls: full in sight, dimmer from memory, darkest never seen; marks never below memory.
+		vec3 v = visibility(world);
+		float seen = max(v.g, v.b);
+		float brightness = mix(mix(unknown_brightness, memory_brightness, seen), 1.0, v.r);
+		// A frontier one cell thick only reaches 0.75 at its middle, so stretch it to full darkness there.
+		// Marks are left out so they stay visible.
+		float edge = min(frontier(world) * 1.5, 1.0) * (1.0 - v.b);
+		color *= mix(brightness, frontier_brightness, edge);
 	}
 	COLOR = vec4(color, alpha);
 }
