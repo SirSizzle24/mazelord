@@ -6,6 +6,7 @@ extends "res://scripts/fighter.gd"
 
 const SPEED := 225.0  # pixels per second
 const RADIUS := 27.0
+const SIZE := "medium"  # size class: needs a block-wide tunnel, or digs one
 const COLOR := Color(0.85, 0.20, 0.20)
 const REPATH_TIME := 1.0  # seconds between fresh paths, since your dungeon changes as it walks
 const DIG_TIME := 4.0  # seconds to dig a whole block; slower than your workers, so you have time to react
@@ -87,12 +88,15 @@ func _process(delta: float) -> void:
 ## door on the troops' path (which treats doors as open) to break it down.
 func _plan(goal: Vector2) -> void:
 	var map: RID = get_world_2d().navigation_map
-	var own_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true, grid.RAIDER_LAYER)
+	var own_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true,
+		grid.nav_layer("hostile", SIZE))
 	door = {}
 	if _reaches(own_path, goal):
 		path = own_path
 		return
-	var open_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true, grid.TROOP_LAYER)
+	# The same size's shape with your doors open (the troops' side), to see if only doors are in the way.
+	var open_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, goal, true,
+		grid.nav_layer("troops", SIZE))
 	if _reaches(open_path, goal):
 		door = _first_door_on(open_path)
 	if door.is_empty():
@@ -100,7 +104,7 @@ func _plan(goal: Vector2) -> void:
 	else:
 		# Walk up to the door; its tile isn't walkable for raiders, so the path stops beside it.
 		var door_spot: Vector2 = grid.tile_to_screen(door["origin"])
-		path = NavigationServer2D.map_get_path(map, position, door_spot, true, grid.RAIDER_LAYER)
+		path = NavigationServer2D.map_get_path(map, position, door_spot, true, grid.nav_layer("hostile", SIZE))
 
 
 func _reaches(some_path: PackedVector2Array, goal: Vector2) -> bool:

@@ -10,9 +10,9 @@ signal name_earned(unit: Node2D)  # the naming panel listens, to ask for a name
 ## Every troop type that can be summoned. Fungi only for now.
 const TROOP_TYPES := {
 	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true,
-		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2, "radius": 20.0},
+		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2, "radius": 20.0, "size": "small"},
 	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false,
-		"health": 60.0, "damage": 8.0, "range": 82.0, "attack_interval": 1.0, "radius": 30.0},
+		"health": 60.0, "damage": 8.0, "range": 82.0, "attack_interval": 1.0, "radius": 30.0, "size": "medium"},
 }
 ## The generic raider for the prototype. Stats are placeholders to tune.
 ## Fame: a troop earns a name when its fame reaches the threshold, which rises with each living named

@@ -30,6 +30,7 @@ var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
 var can_dig := false  # workers only: digging and building
 var radius := 20.0  # set from the troop type; everyone but workers is bigger
+var size := "small"  # size class (see grid.SIZES): which tunnels it fits through
 var roster_label := ""  # e.g. "Worker 1"; troops are unnamed until they earn fame
 var flight := 0  # which flight it's in: 1 to 5, or 0 for none
 var element := 1  # which element of its flight: 1 to 4
@@ -60,6 +61,7 @@ func setup(new_type_id: String, troop_type: Dictionary) -> void:
 	color = troop_type["color"]
 	can_dig = troop_type["can_dig"]
 	radius = troop_type["radius"]
+	size = troop_type["size"]
 	set_stats(troop_type)
 
 
@@ -306,7 +308,8 @@ func _release_job() -> void:
 ## Plans a path to a point. Returns false, and stays put, if there's no way there.
 func _walk_to(point: Vector2) -> bool:
 	var map: RID = get_world_2d().navigation_map
-	var new_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, point, true)
+	var new_path: PackedVector2Array = NavigationServer2D.map_get_path(map, position, point, true,
+		grid.nav_layer("troops", size))
 	# The server returns the closest reachable point when the target can't be reached,
 	# so check that the path really ends at the target.
 	if new_path.is_empty() or new_path[new_path.size() - 1].distance_to(point) > radius:
@@ -322,7 +325,8 @@ func _walk_to_nearest(spots: PackedVector2Array) -> bool:
 	var best_length := INF
 	for spot in spots:
 		var spot_on_ground: Vector2 = NavigationServer2D.map_get_closest_point(map, spot)  # snap onto walkable ground
-		var candidate: PackedVector2Array = NavigationServer2D.map_get_path(map, position, spot_on_ground, true)
+		var candidate: PackedVector2Array = NavigationServer2D.map_get_path(map, position, spot_on_ground, true,
+			grid.nav_layer("troops", size))
 		if candidate.is_empty() or candidate[candidate.size() - 1].distance_to(spot_on_ground) > radius:
 			continue  # can't get there
 		var length := _path_length(candidate)

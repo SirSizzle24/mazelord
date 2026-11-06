@@ -4,6 +4,7 @@ extends "res://scripts/fighter.gd"
 
 const SPEED := 195.0
 const RADIUS := 14.0
+const SIZE := "small"
 const COLOR := Color(0.75, 0.55, 0.85)
 const REPATH_TIME := 0.5
 const PICKUP_DISTANCE := 30.0
@@ -61,7 +62,7 @@ func _process(delta: float) -> void:
 	if repath_time_left <= 0.0:
 		repath_time_left = REPATH_TIME
 		var map: RID = get_world_2d().navigation_map
-		path = NavigationServer2D.map_get_path(map, position, goal, true, grid.RAIDER_LAYER)
+		path = NavigationServer2D.map_get_path(map, position, goal, true, grid.nav_layer("hostile", SIZE))
 	if not path.is_empty():
 		position = position.move_toward(path[0], SPEED * delta)
 		if position == path[0]:

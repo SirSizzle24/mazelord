@@ -4,6 +4,7 @@ extends "res://scripts/fighter.gd"
 
 const SPEED := 210.0
 const RADIUS := 27.0
+const SIZE := "medium"
 const COLOR := Color(0.55, 0.25, 0.70)
 const CHASE_RANGE := 330.0  # how far from its post a guard will go after your troops
 const REPATH_TIME := 0.5
@@ -52,7 +53,7 @@ func _process(delta: float) -> void:
 	if repath_time_left <= 0.0:
 		repath_time_left = REPATH_TIME
 		var map: RID = get_world_2d().navigation_map
-		path = NavigationServer2D.map_get_path(map, position, goal, true, grid.RAIDER_LAYER)
+		path = NavigationServer2D.map_get_path(map, position, goal, true, grid.nav_layer("hostile", SIZE))
 	if not path.is_empty():
 		position = position.move_toward(path[0], SPEED * delta)
 		if position == path[0]:

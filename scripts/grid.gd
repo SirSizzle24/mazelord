@@ -10,7 +10,12 @@ const GRID_WIDTH := 180  # 60 blocks
 const GRID_HEIGHT := 180
 const TILE_WIDTH := 64   # one cell's diamond width in pixels
 const TILE_HEIGHT := 64  # same as the width: squares turned 45°, no squash
-const UNIT_RADIUS := 20.0  # how far units stay from rock; one unit size for now
+## Size classes, and how far each keeps its center from rock (its clearance). A tunnel W cells wide along
+## the grid is W * 45.25 pixels across (a cell's edge), so a clearance between (W - 1) and W half-cells
+## lets a creature through W cells but not W - 1: small fits 1 cell, medium 3 (one block), large 6.
+## Diagonal (staircase) tunnels are narrower than they look, so check the cave tunnels in play.
+const SIZES := ["small", "medium", "large"]
+const CLEARANCE := {"small": 16.0, "medium": 50.0, "large": 120.0}
 
 enum Tile { ROCK, FLOOR }
 ## What each tile looks like on the ground layer: one placeholder texture per kind.
@@ -55,10 +60,10 @@ const FEATURE_MIN_DISTANCE := 36  # deposits and lairs stay at least this many c
 const RUIN_COUNT := 3  # small sealed rooms hidden in the rock, holding items
 const ITEM_KINDS := ["mana_cache", "food_cache", "treasure", "lore"]
 
-# Navigation layers: troops and raiders walk on different shapes, because doors are open for troops
-# but closed to raiders, who must break them down.
-const TROOP_LAYER := 1
-const RAIDER_LAYER := 2
+# Navigation layers: one walkable shape per side and size. Sides differ because each side's doors are
+# open for its own troops and closed to the other side, who must break them down. "troops" are yours
+# (rival doors closed); "hostile" is raiders and the rival (your doors closed).
+const SIDES := {"troops": "rival", "hostile": "player"}  # side -> whose finished doors are closed to it
 const DOOR_HEALTH := 60.0
 const RIVAL_DOOR_COLOR := Color(0.35, 0.15, 0.40)
 
@@ -95,8 +100,7 @@ var ground := TileMapLayer.new()  # draws rock and floor; only changed cells are
 var mycelium_layer := TileMapLayer.new()  # mycelium over the floor; its texture's clear parts show the floor
 var mycelium_image: Image  # one pixel per cell: red channel = mycelium, green = the rival's; the shader fades between cells
 var mycelium_texture: ImageTexture
-var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
-var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
+var nav_regions: Dictionary = {}  # navigation layer -> its NavigationRegion2D (one per side and size)
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
 var nav_version := 0  # goes up with every rebuild, so units can tell the walkable shape changed
 var baking := 0  # walkable shapes still being built in the background (0 when idle)
@@ -140,10 +144,12 @@ func _ready() -> void:
 	add_child(mycelium_layer)
 	mycelium_layer.position = ground.position
 
-	nav_region.navigation_layers = TROOP_LAYER
-	raider_region.navigation_layers = RAIDER_LAYER
-	add_child(nav_region)
-	add_child(raider_region)
+	for side in SIDES:
+		for size in SIZES:
+			var region := NavigationRegion2D.new()
+			region.navigation_layers = nav_layer(side, size)
+			nav_regions[region.navigation_layers] = region
+			add_child(region)
 	_generate_caves()
 
 	# A small pre-dug starting room in the middle of the map, as the onboarding design calls for.
@@ -725,7 +731,7 @@ func work_spots(job: Dictionary) -> PackedVector2Array:
 				continue  # don't stand where a furnishing is or will be solid
 			var edge_middle := (tile_to_screen(tile) + tile_to_screen(beside)) / 2.0
 			var inward := (tile_to_screen(beside) - edge_middle).normalized()
-			spots.append(edge_middle + inward * (UNIT_RADIUS + 4.0))
+			spots.append(edge_middle + inward * (CLEARANCE["small"] + 4.0))  # workers do the jobs
 	return spots
 
 
@@ -759,22 +765,31 @@ func dig(tile: Vector2i) -> void:
 		layout_changed.emit()
 
 
-## Builds the walkable shape from every floor tile, shrunk by UNIT_RADIUS so units keep clear of rock.
-## Starts rebuilding both walkable shapes in the background. Gathering the outlines happens here, on the
-## main thread (it's quick); the slow part, baking, runs on another thread, and each shape is swapped in
-## when it's done. Until then troops keep using the old shapes, a few frames out of date.
+## The navigation layer for a side ("troops" or "hostile") and size: one bit each, so paths can ask for
+## exactly one shape. Troops use bits 1-3 (small, medium, large), hostiles bits 4-6.
+func nav_layer(side: String, size: String) -> int:
+	var bit: int = SIZES.find(size) + (0 if side == "troops" else SIZES.size())
+	return 1 << bit
+
+
+## Builds every walkable shape from the floor tiles, each shrunk by its size's clearance so creatures keep
+## clear of rock. Gathering the outlines happens here, on the main thread (it's quick); the slow part,
+## baking, runs on other threads, and each shape is swapped in when it's done. Until then creatures keep
+## using the old shapes, a few frames out of date.
 func rebuild_navigation() -> void:
 	bake_started_usec = Time.get_ticks_usec()
-	baking = 2
-	_refresh_rows()  # once, shared by both shapes
-	_bake_in_background(nav_region, "rival")  # your troops: rival doors are closed
-	_bake_in_background(raider_region, "player")  # hostiles: your doors are closed
+	baking = SIDES.size() * SIZES.size()
+	_refresh_rows()  # once, shared by every shape
+	for side in SIDES:
+		var source := _walkable_source(SIDES[side])  # once per side: the sizes share it
+		for size in SIZES:
+			_bake_in_background(nav_regions[nav_layer(side, size)], source, CLEARANCE[size])
 
 
-func _bake_in_background(region: NavigationRegion2D, closed_owner: String) -> void:
-	var source := _walkable_source(closed_owner)
+func _bake_in_background(region: NavigationRegion2D, source: NavigationMeshSourceGeometryData2D,
+		clearance: float) -> void:
 	var nav_polygon := NavigationPolygon.new()
-	nav_polygon.agent_radius = UNIT_RADIUS
+	nav_polygon.agent_radius = clearance
 	# The callback can arrive from the background thread, so hand the result to the main thread with
 	# call_deferred before touching the scene.
 	NavigationServer2D.bake_from_source_geometry_data_async(nav_polygon, source,
@@ -785,12 +800,15 @@ func _finish_bake(region: NavigationRegion2D, nav_polygon: NavigationPolygon) ->
 	region.navigation_polygon = nav_polygon
 	baking -= 1
 	if baking == 0:
-		nav_version += 1  # both shapes are new: units may retry jobs they couldn't reach
-		# Measured Nov 5 on the laptop: about 0.35 ms on the main thread, 32 ms in the background.
+		nav_version += 1  # every shape is new: units may retry jobs they couldn't reach
+		# Measured Nov 5 on the laptop with two shapes: about 0.35 ms on the main thread, 32 ms in the
+		# background. Printed for now to measure six shapes; remove once we have numbers.
+		print("Navigation rebuilt (%d shapes): %.1f ms in the background" % [nav_regions.size(),
+			(Time.get_ticks_usec() - bake_started_usec) / 1000.0])
 
 
 ## Gathers the outlines for a walkable shape: every floor tile, minus solid furnishings (the baker shrinks
-## it by UNIT_RADIUS so units keep clear of rock). Finished doors belonging to closed_owner are cut out
+## it by each size's clearance so creatures keep clear of rock). Finished doors belonging to closed_owner are cut out
 ## too: each side's doors are open for its own troops and closed to the other side.
 func _walkable_source(closed_owner: String) -> NavigationMeshSourceGeometryData2D:
 	var source := NavigationMeshSourceGeometryData2D.new()
