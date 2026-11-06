@@ -6,6 +6,7 @@ shader_type canvas_item;
 // A large-scale variation texture breaks up the repetition of the smaller ones.
 
 uniform bool use_mask = false;  // walls: a mask says which pixels are top or face; ground: all top
+uniform bool top_alpha = false;  // mycelium: the top texture's own transparency lets the floor show through
 uniform sampler2D mask_tex : filter_nearest;
 uniform sampler2D top_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D face_tex : repeat_enable, filter_linear_mipmap;
@@ -45,9 +46,9 @@ vec2 turn(vec2 p, float angle) {
 
 // Reads a texture twice, at different scales and turns, and blends between the two copies by a slow
 // noise. Wherever you look it's a different mix, so the repeat never lines up the same way twice.
-vec3 blended(sampler2D tex, vec2 p, vec2 at) {
-	vec3 first = texture(tex, p).rgb;
-	vec3 second = texture(tex, turn(p, 0.6) * 0.73 + vec2(0.31, 0.77)).rgb;
+vec4 blended(sampler2D tex, vec2 p, vec2 at) {
+	vec4 first = texture(tex, p);
+	vec4 second = texture(tex, turn(p, 0.6) * 0.73 + vec2(0.31, 0.77));
 	float mix_amount = smoothstep(0.35, 0.65, texture(macro_tex, at / (macro_scale * 0.6) + vec2(0.5)).r);
 	return mix(first, second, mix_amount);
 }
@@ -75,7 +76,7 @@ float cell_lines(vec2 at) {
 
 void fragment() {
 	vec4 base = texture(TEXTURE, UV);  // the tile's tint: white, a gray for memory or shading, or a hue
-	vec3 surface = blended(top_tex, world / top_scale, world);
+	vec4 surface = blended(top_tex, world / top_scale, world);
 	float ridge = 0.0;
 	if (use_mask) {
 		vec4 part = texture(mask_tex, UV);
@@ -92,7 +93,7 @@ void fragment() {
 	// readings of the variation texture.
 	float bright = texture(macro_tex, world / macro_scale).r;
 	float warm = texture(macro_tex, world / (macro_scale * 1.9) + vec2(0.23, 0.61)).r;
-	vec3 color = base.rgb * surface;
+	vec3 color = base.rgb * surface.rgb;
 	color *= 1.0 - macro_strength / 2.0 + macro_strength * bright;
 	color *= vec3(1.0) + hue_strength * (warm - 0.5) * vec3(2.0, 0.0, -2.0);
 	color += ridge * ridge_highlight;
@@ -100,6 +101,9 @@ void fragment() {
 		color *= 1.0 - line_darken * cell_lines(world);
 	}
 	float alpha = base.a;
+	if (top_alpha) {
+		alpha *= surface.a;
+	}
 	if (fog_mode == 1) {
 		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see
 	} else if (fog_mode == 2) {

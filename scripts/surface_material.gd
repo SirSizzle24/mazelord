@@ -38,11 +38,13 @@ const PLACEHOLDER_COLORS := {
 	"wall_top": [Color(0.36, 0.34, 0.31), Color(0.52, 0.50, 0.46)],
 	"wall_face": [Color(0.26, 0.23, 0.20), Color(0.44, 0.39, 0.34)],
 	"macro": [Color.BLACK, Color.WHITE],
+	"mycelium": [Color(0.35, 0.20, 0.45, 0.0), Color(0.55, 0.35, 0.70, 1.0)],  # patchy, see-through
 }
 
 
 ## A seamless noise texture, made once per name. Higher frequency means finer grain.
-## Uses your painted texture if there's one at res://Assets/<name>.png (floor, wall_top, wall_face, macro);
+## Uses your painted texture if there's one at res://Assets/<name>.png (floor, wall_top, wall_face, macro,
+## mycelium);
 ## otherwise makes a seamless noise placeholder.
 static func _texture(texture_name: String, frequency: float) -> Texture2D:
 	var painted := "res://Assets/%s.png" % texture_name

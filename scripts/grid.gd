@@ -62,7 +62,6 @@ const RAIDER_LAYER := 2
 const DOOR_HEALTH := 60.0
 const RIVAL_DOOR_COLOR := Color(0.35, 0.15, 0.40)
 
-const MYCELIUM_COLOR := Color(0.70, 0.55, 0.85, 0.45)  # drawn over the floor, see-through
 const MYCELIUM_SPREAD_TIME := 0.17  # seconds per cell spread (about a block every 1.5 seconds)
 const MYCELIUM_RADIUS := 12.0  # how far mycelium spreads from its source, in cells (4 blocks)
 
@@ -92,6 +91,7 @@ var items: Dictionary = {}  # tile -> an item lying there: {"kind", "lore_index"
 var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog keeps it lit
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var ground := TileMapLayer.new()  # draws rock and floor; only changed cells are updated
+var mycelium_layer := TileMapLayer.new()  # mycelium over the floor; its texture's clear parts show the floor
 var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
 var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
@@ -120,6 +120,15 @@ func _ready() -> void:
 	var probe := Vector2i(5, 3)
 	if (ground.position + ground.map_to_local(probe)).distance_to(tile_to_screen(probe)) > 1.0:
 		push_warning("Ground tiles don't line up with tile_to_screen(): check the TileSet layout")
+
+	# Mycelium: one plain white diamond, textured by world position like the floor, so its pattern
+	# runs across cells. Added after the ground, so it draws on top of it.
+	mycelium_layer.tile_set = TileTextures.build([Color.WHITE], TILE_WIDTH)
+	mycelium_layer.material = SurfaceMaterial.make(null, "mycelium")
+	mycelium_layer.material.set_shader_parameter("top_alpha", true)
+	mycelium_layer.show_behind_parent = true
+	add_child(mycelium_layer)
+	mycelium_layer.position = ground.position
 
 	nav_region.navigation_layers = TROOP_LAYER
 	raider_region.navigation_layers = RAIDER_LAYER
@@ -300,7 +309,7 @@ func _build_rival_room(center: Vector2i) -> void:
 				tiles[tile.x][tile.y] = Tile.FLOOR
 				rival_room.append(tile)
 				if max(abs(dx), abs(dy)) <= 4:
-					mycelium[tile] = true
+					_add_mycelium(tile)
 					rival_mycelium.append(tile)
 	for side in [Vector2i(0, -1), Vector2i(0, 1)]:
 		var door_tile: Vector2i = center + side * 9 - Vector2i(1, 1)  # the door block's first cell
@@ -513,8 +522,12 @@ func _spread_mycelium() -> void:
 				best = tile
 				best_distance = distance
 		if best != NO_TILE:
-			mycelium[best] = true
-			queue_redraw()
+			_add_mycelium(best)
+
+
+func _add_mycelium(tile: Vector2i) -> void:
+	mycelium[tile] = true
+	mycelium_layer.set_cell(tile, 0, Vector2i(0, 0))
 
 
 func _touches_mycelium(tile: Vector2i, source_cells: Array[Vector2i]) -> bool:
@@ -849,10 +862,6 @@ func damage_door(door: Dictionary, amount: float) -> void:
 
 ## Draws what sits on the ground. The ground itself is the TileMapLayer, drawn underneath.
 func _draw() -> void:
-	# Mycelium over the floor.
-	for tile in mycelium:
-		draw_colored_polygon(diamond(tile), MYCELIUM_COLOR)
-
 	# Furnishings on top of the floor: see-through until built, solid once built.
 	for furnishing in furnishings:
 		var color: Color = furnishing["color"]
