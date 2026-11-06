@@ -46,6 +46,9 @@ var unreachable_version := -1  # the grid's nav_version when unreachable was las
 var death_time_left := 0.0  # while injured
 var heal_time := 0.0  # seconds spent healing on mycelium while injured
 var fame := 0.0
+## What this troop has been through, for its card (and later, for what it remembers and says).
+var history := {"raids_survived": 0, "raiders_downed": 0, "times_injured": 0, "injuries_survived": 0,
+	"rescues": 0, "cells_dug": 0, "builds": 0, "hauls": 0}
 var is_named := false
 var troop_name := ""
 var awaiting_name := false  # fame reached the threshold; the player is choosing a name
@@ -111,6 +114,7 @@ func _on_hit_landed(damage_dealt: float, downed_it: bool) -> void:
 	add_fame(damage_dealt * FAME_PER_DAMAGE)
 	if downed_it:
 		add_fame(FAME_PER_DOWNED_RAIDER)
+		record("raiders_downed")
 
 
 ## The tile the unit is currently over.
@@ -169,6 +173,11 @@ func is_idle_worker() -> bool:
 
 ## Puts a fighter in a flight and element (flight 0 takes it out). Workers can't join flights:
 ## they belong to the workforce and shouldn't flood the front lines.
+## Counts one more of something in this troop's history.
+func record(event: String) -> void:
+	history[event] += 1
+
+
 func set_flight(new_flight: int, new_element: int) -> void:
 	if can_dig:
 		return
@@ -354,6 +363,7 @@ func _haul_step() -> void:
 	# At storage: deliver it, and only now does it take effect.
 	dungeon.receive_item(job["item"])
 	add_fame(FAME_PER_JOB)
+	record("hauls")
 	job["carrying"] = false  # delivered, so releasing the job mustn't put it down again
 	_release_job()
 	queue_redraw()
@@ -373,6 +383,7 @@ func _rescue_step() -> void:
 	# At the mycelium: set the patient down to heal.
 	patient.carried_by = null
 	add_fame(FAME_PER_RESCUE)
+	record("rescues")
 	patient.position = position
 	job["carrying"] = false
 	_release_job()
@@ -413,6 +424,7 @@ func _path_length(points: PackedVector2Array) -> float:
 
 ## A downed troop is injured: it drops what it's doing, and its death timer starts.
 func _on_downed() -> void:
+	record("times_injured")
 	_stop_working()
 	path = PackedVector2Array()
 	set_selected(false)
@@ -446,6 +458,7 @@ func _recover() -> void:
 	health = max_health * RECOVERED_HEALTH
 	dungeon.on_troop_healed()
 	add_fame(FAME_FOR_SURVIVING)
+	record("injuries_survived")
 	queue_redraw()
 	if can_dig:
 		dispatcher.request()
@@ -516,6 +529,7 @@ func _process(delta: float) -> void:
 	var done := job
 	_release_job()
 	add_fame(FAME_PER_DUG_CELL if done["kind"] == "dig" else FAME_PER_JOB)
+	record("cells_dug" if done["kind"] == "dig" else "builds")
 	if done["kind"] == "dig":
 		grid.dig(done["tile"])
 		# Tunnel in: step straight into the freshly dug tile, then look for the next job on arrival.
