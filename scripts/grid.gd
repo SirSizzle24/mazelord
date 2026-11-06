@@ -13,7 +13,7 @@ const TILE_HEIGHT := 64  # same as the width: squares turned 45°, no squash
 ## Size classes, and how far each keeps its center from rock (its clearance). A tunnel W cells wide along
 ## the grid is W * 45.25 pixels across (a cell's edge), so a clearance between (W - 1) and W half-cells
 ## lets a creature through W cells but not W - 1: small fits 1 cell, medium 3 (one block), large 6.
-## Diagonal (staircase) tunnels are narrower than they look, so check the cave tunnels in play.
+## Diagonal (staircase) tunnels are narrower than they look: medium needs about 5 cells of staircase.
 const SIZES := ["small", "medium", "large"]
 const CLEARANCE := {"small": 16.0, "medium": 50.0, "large": 120.0}
 
