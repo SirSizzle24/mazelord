@@ -6,6 +6,7 @@ extends Node2D
 ## Also keeps the Dig, Build and Remove modes exclusive: turning one on turns the others off.
 
 const TapDetector = preload("res://scripts/tap_detector.gd")
+const SurfaceMaterial = preload("res://scripts/surface_material.gd")
 const DECONSTRUCT_REFUND := 0.5  # share of the cost returned when tearing down a finished item
 
 @export var grid: Node2D
@@ -61,12 +62,14 @@ func _on_build_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		dig_button.button_pressed = false  # only one mode at a time
 		remove_button.button_pressed = false
+	_update_lines()
 
 
 func _on_dig_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		build_button.button_pressed = false
 		remove_button.button_pressed = false
+	_update_lines()
 
 
 func _on_remove_toggled(toggled_on: bool) -> void:
@@ -74,6 +77,12 @@ func _on_remove_toggled(toggled_on: bool) -> void:
 	if toggled_on:
 		dig_button.button_pressed = false
 		build_button.button_pressed = false
+	_update_lines()
+
+
+## Cell lines show only while a mode that works on cells is on: digging, building or removing.
+func _update_lines() -> void:
+	SurfaceMaterial.show_lines(build_mode or remove_mode or dig_button.button_pressed)
 
 
 func _process(_delta: float) -> void:

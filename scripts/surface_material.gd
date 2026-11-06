@@ -6,6 +6,7 @@ extends RefCounted
 const Surface = preload("res://scripts/surface.gdshader")
 
 static var _textures: Dictionary = {}  # made once and shared by every layer
+static var _lined: Array = []  # the ground and fog materials, which can show cell lines
 
 
 ## A material for a layer. Walls pass their mask; ground and fog pass null (everything is top).
@@ -19,7 +20,15 @@ static func make(mask: Texture2D, top: String) -> ShaderMaterial:
 	material.set_shader_parameter("top_tex", _texture(top, 0.02))
 	material.set_shader_parameter("face_tex", _texture("wall_face", 0.03))
 	material.set_shader_parameter("macro_tex", _texture("macro", 0.006))
+	if mask == null:
+		_lined.append(material)
 	return material
+
+
+## Shows or hides the cell lines on the ground and fog (on while digging, building or removing).
+static func show_lines(on: bool) -> void:
+	for material in _lined:
+		material.set_shader_parameter("show_lines", on)
 
 
 ## Placeholder colors for each texture, darkest to lightest, until your paintings replace them.

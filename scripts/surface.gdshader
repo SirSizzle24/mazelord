@@ -28,6 +28,10 @@ uniform vec2 grid_cells = vec2(180.0, 180.0);  // the grid's size in cells
 uniform float cell_size = 64.0;  // a cell's width in pixels
 uniform float memory_brightness = 0.45;  // how bright remembered walls are, compared with lit ones
 
+// Cell lines, for digging and building. Ground and fog only (walls never get them).
+uniform bool show_lines = false;
+uniform float line_darken = 0.35;  // how much darker a line is than the ground under it
+
 varying vec2 world;
 
 void vertex() {
@@ -56,6 +60,19 @@ float visibility(vec2 at) {
 	return smoothstep(0.0, 1.0, texture(vis_tex, (cell + vec2(0.5)) / grid_cells).r);
 }
 
+// How much of a cell line is here, from 0 to 1. Lines stay about one screen pixel wide at any zoom,
+// and fade out when zoomed so far out that cells are only a few pixels across.
+float cell_lines(vec2 at) {
+	vec2 scaled = at / (cell_size * 0.5);
+	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5 + vec2(0.5);  // edges at whole numbers
+	vec2 to_edge = abs(fract(cell + 0.5) - 0.5);  // distance to the nearest edge, in cells
+	vec2 per_pixel = max(fwidth(cell), vec2(0.00001));  // how many cells one screen pixel spans
+	vec2 pixels = to_edge / per_pixel;  // distance to the nearest edge, in screen pixels
+	float line = 1.0 - smoothstep(0.5, 1.5, min(pixels.x, pixels.y));
+	float fade = 1.0 - smoothstep(0.08, 0.2, max(per_pixel.x, per_pixel.y));
+	return line * fade;
+}
+
 void fragment() {
 	vec4 base = texture(TEXTURE, UV);  // the tile's tint: white, a gray for memory or shading, or a hue
 	vec3 surface = blended(top_tex, world / top_scale, world);
@@ -79,6 +96,9 @@ void fragment() {
 	color *= 1.0 - macro_strength / 2.0 + macro_strength * bright;
 	color *= vec3(1.0) + hue_strength * (warm - 0.5) * vec3(2.0, 0.0, -2.0);
 	color += ridge * ridge_highlight;
+	if (show_lines && !use_mask) {
+		color *= 1.0 - line_darken * cell_lines(world);
+	}
 	float alpha = base.a;
 	if (fog_mode == 1) {
 		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see
