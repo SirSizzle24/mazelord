@@ -101,11 +101,11 @@ func _paint(tile: Vector2i) -> void:
 	layer.set_cell(tile, 0, Vector2i(kind, 0))
 
 
-## A wall stands only where you know there's rock: bright in sight, dim from memory, and none in the
-## unknown, so the gaps between walls can't give hidden caves away.
+## A wall stands wherever rock is known or nothing is known: bright in sight, dim from memory. The
+## unknown is solid rock with no faces, so a hidden cave looks the same as the rock around it.
 func _paint_wall(tile: Vector2i) -> void:
 	var in_sight := visible_tiles.has(tile) or not fog_enabled
-	var kind: int = grid.ground_kind(tile) if in_sight else memory.get(tile, -1)
+	var kind: int = grid.ground_kind(tile) if in_sight else memory.get(tile, grid.Ground.ROCK)
 	var is_rock: bool = kind == grid.Ground.ROCK or kind == grid.Ground.DEPOSIT_ROCK \
 		or (kind == grid.Ground.MARKED and not grid.is_floor(tile) if in_sight else kind == grid.Ground.MARKED)
 	if not is_rock:
