@@ -33,7 +33,12 @@ const PLACEHOLDER_COLORS := {
 
 
 ## A seamless noise texture, made once per name. Higher frequency means finer grain.
+## Uses your painted texture if there's one at res://Assets/<name>.png (floor, wall_top, wall_face, macro);
+## otherwise makes a seamless noise placeholder.
 static func _texture(texture_name: String, frequency: float) -> Texture2D:
+	var painted := "res://Assets/%s.png" % texture_name
+	if not _textures.has(texture_name) and ResourceLoader.exists(painted):
+		_textures[texture_name] = load(painted)
 	if not _textures.has(texture_name):
 		var noise := FastNoiseLite.new()
 		noise.frequency = frequency

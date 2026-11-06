@@ -9,7 +9,7 @@ const TileTextures = preload("res://scripts/tile_textures.gd")
 const SurfaceMaterial = preload("res://scripts/surface_material.gd")
 const SIGHT_RADIUS := 15  # cells (5 blocks) a troop can see in every direction
 const UPDATE_INTERVAL := 0.2  # seconds between sight updates; every frame would be wasted work
-const MEMORY_DARKEN := 0.55  # how much darker remembered tiles look than live ones
+const MEMORY_DARKEN := 0.30  # how much darker remembered tiles look than live ones
 const WALL_FACE_HEIGHT := 32.0  # pixels of front face along a wall's lower edge; taller looks taller
 ## The wall tiles, in atlas order: lit and remembered rock, lit and remembered deposit rock, and a mark.
 enum Wall { ROCK, ROCK_DIM, DEPOSIT, DEPOSIT_DIM, MARKED }
