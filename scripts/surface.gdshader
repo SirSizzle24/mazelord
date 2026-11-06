@@ -7,6 +7,9 @@ shader_type canvas_item;
 
 uniform bool use_mask = false;  // walls: a mask says which pixels are top or face; ground: all top
 uniform bool top_alpha = false;  // mycelium: the top texture's own transparency lets the floor show through
+// Mycelium's soft border. cover_tex has one pixel per cell, white where there's mycelium.
+uniform bool use_cover = false;
+uniform sampler2D cover_tex : filter_linear;
 uniform sampler2D mask_tex : filter_nearest;
 uniform sampler2D top_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D face_tex : repeat_enable, filter_linear_mipmap;
@@ -74,6 +77,20 @@ float cell_lines(vec2 at) {
 	return line * fade;
 }
 
+// How much mycelium shows here, from 0 to 1. Four smooth readings of the cover image, half a cell apart,
+// averaged: the fade runs from the middle of the last mycelium cell (0.75) through the border (0.5) and
+// the middle of the next cell (0.25) to that cell's far edge (0).
+float coverage(vec2 at) {
+	vec2 scaled = at / (cell_size * 0.5);
+	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5 + vec2(0.5);
+	float total = 0.0;
+	total += texture(cover_tex, (cell + vec2(-0.5, -0.5)) / grid_cells).r;
+	total += texture(cover_tex, (cell + vec2(0.5, -0.5)) / grid_cells).r;
+	total += texture(cover_tex, (cell + vec2(-0.5, 0.5)) / grid_cells).r;
+	total += texture(cover_tex, (cell + vec2(0.5, 0.5)) / grid_cells).r;
+	return total / 4.0;
+}
+
 void fragment() {
 	vec4 base = texture(TEXTURE, UV);  // the tile's tint: white, a gray for memory or shading, or a hue
 	vec4 surface = blended(top_tex, world / top_scale, world);
@@ -103,6 +120,9 @@ void fragment() {
 	float alpha = base.a;
 	if (top_alpha) {
 		alpha *= surface.a;
+	}
+	if (use_cover) {
+		alpha *= coverage(world);
 	}
 	if (fog_mode == 1) {
 		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see

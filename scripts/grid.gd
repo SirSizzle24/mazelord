@@ -64,6 +64,7 @@ const RIVAL_DOOR_COLOR := Color(0.35, 0.15, 0.40)
 
 const MYCELIUM_SPREAD_TIME := 0.17  # seconds per cell spread (about a block every 1.5 seconds)
 const MYCELIUM_RADIUS := 12.0  # how far mycelium spreads from its source, in cells (4 blocks)
+const MYCELIUM_SCALE := 2048.0  # world pixels per repeat of the mycelium texture; bigger = larger, fewer features
 
 const REBUILD_INTERVAL := 0.25  # at most four rebuilds a second, so digging a block isn't nine rebuilds
 
@@ -92,6 +93,8 @@ var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog kee
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var ground := TileMapLayer.new()  # draws rock and floor; only changed cells are updated
 var mycelium_layer := TileMapLayer.new()  # mycelium over the floor; its texture's clear parts show the floor
+var mycelium_image: Image  # one pixel per cell: white where there's mycelium; the shader fades between cells
+var mycelium_texture: ImageTexture
 var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
 var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
 var nav_dirty := false  # true when tiles changed and the walkable shape needs rebuilding
@@ -126,6 +129,13 @@ func _ready() -> void:
 	mycelium_layer.tile_set = TileTextures.build([Color.WHITE], TILE_WIDTH)
 	mycelium_layer.material = SurfaceMaterial.make(null, "mycelium")
 	mycelium_layer.material.set_shader_parameter("top_alpha", true)
+	mycelium_layer.material.set_shader_parameter("top_scale", MYCELIUM_SCALE)
+	mycelium_image = Image.create(GRID_WIDTH, GRID_HEIGHT, false, Image.FORMAT_L8)  # starts all black
+	mycelium_texture = ImageTexture.create_from_image(mycelium_image)
+	mycelium_layer.material.set_shader_parameter("use_cover", true)
+	mycelium_layer.material.set_shader_parameter("cover_tex", mycelium_texture)
+	mycelium_layer.material.set_shader_parameter("grid_cells", Vector2(GRID_WIDTH, GRID_HEIGHT))
+	mycelium_layer.material.set_shader_parameter("cell_size", float(TILE_WIDTH))
 	mycelium_layer.show_behind_parent = true
 	add_child(mycelium_layer)
 	mycelium_layer.position = ground.position
@@ -525,9 +535,17 @@ func _spread_mycelium() -> void:
 			_add_mycelium(best)
 
 
+## Adds mycelium to a cell. Its picture fades out across the border into the cells around it, so the
+## layer draws those too; the shader works out how much shows where.
 func _add_mycelium(tile: Vector2i) -> void:
 	mycelium[tile] = true
-	mycelium_layer.set_cell(tile, 0, Vector2i(0, 0))
+	mycelium_image.set_pixelv(tile, Color.WHITE)
+	mycelium_texture.update(mycelium_image)
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var near := tile + Vector2i(dx, dy)
+			if is_in_bounds(near):
+				mycelium_layer.set_cell(near, 0, Vector2i(0, 0))
 
 
 func _touches_mycelium(tile: Vector2i, source_cells: Array[Vector2i]) -> bool:
