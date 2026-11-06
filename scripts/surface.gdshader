@@ -7,9 +7,12 @@ shader_type canvas_item;
 
 uniform bool use_mask = false;  // walls: a mask says which pixels are top or face; ground: all top
 uniform bool top_alpha = false;  // mycelium: the top texture's own transparency lets the floor show through
-// Mycelium's soft border. cover_tex has one pixel per cell, white where there's mycelium.
+// Mycelium's soft border. cover_tex has one pixel per cell: red where there's mycelium, green where
+// it's the rival's. The rival's is turned toward red by rotating its hue.
 uniform bool use_cover = false;
 uniform sampler2D cover_tex : filter_linear;
+uniform float rival_hue = 1.25;  // radians of hue turn for the rival's mycelium: about 70 degrees, purple to red
+uniform float rival_saturation = 2.2;  // the purple is muted, so a plain turn gives brown; this makes it red
 uniform sampler2D mask_tex : filter_nearest;
 uniform sampler2D top_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D face_tex : repeat_enable, filter_linear_mipmap;
@@ -80,15 +83,22 @@ float cell_lines(vec2 at) {
 // How much mycelium shows here, from 0 to 1. Four smooth readings of the cover image, half a cell apart,
 // averaged: the fade runs from the middle of the last mycelium cell (0.75) through the border (0.5) and
 // the middle of the next cell (0.25) to that cell's far edge (0).
-float coverage(vec2 at) {
+// Returns x: how much mycelium, y: how much of it is the rival's (both 0 to 1, faded the same way).
+vec2 coverage(vec2 at) {
 	vec2 scaled = at / (cell_size * 0.5);
 	vec2 cell = vec2(scaled.x + scaled.y, scaled.y - scaled.x) * 0.5 + vec2(0.5);
-	float total = 0.0;
-	total += texture(cover_tex, (cell + vec2(-0.5, -0.5)) / grid_cells).r;
-	total += texture(cover_tex, (cell + vec2(0.5, -0.5)) / grid_cells).r;
-	total += texture(cover_tex, (cell + vec2(-0.5, 0.5)) / grid_cells).r;
-	total += texture(cover_tex, (cell + vec2(0.5, 0.5)) / grid_cells).r;
+	vec2 total = vec2(0.0);
+	total += texture(cover_tex, (cell + vec2(-0.5, -0.5)) / grid_cells).rg;
+	total += texture(cover_tex, (cell + vec2(0.5, -0.5)) / grid_cells).rg;
+	total += texture(cover_tex, (cell + vec2(-0.5, 0.5)) / grid_cells).rg;
+	total += texture(cover_tex, (cell + vec2(0.5, 0.5)) / grid_cells).rg;
 	return total / 4.0;
+}
+
+// Turns a color's hue by angle radians, keeping its brightness: a rotation around the gray axis.
+vec3 hue_turn(vec3 c, float angle) {
+	const vec3 gray = vec3(0.57735);
+	return c * cos(angle) + cross(gray, c) * sin(angle) + gray * dot(gray, c) * (1.0 - cos(angle));
 }
 
 void fragment() {
@@ -111,6 +121,14 @@ void fragment() {
 	float bright = texture(macro_tex, world / macro_scale).r;
 	float warm = texture(macro_tex, world / (macro_scale * 1.9) + vec2(0.23, 0.61)).r;
 	vec3 color = base.rgb * surface.rgb;
+	vec2 cover = vec2(1.0, 0.0);
+	if (use_cover) {
+		cover = coverage(world);
+		vec3 turned = hue_turn(color, rival_hue);
+		float average = (turned.r + turned.g + turned.b) / 3.0;
+		turned = clamp(vec3(average) + (turned - vec3(average)) * rival_saturation, 0.0, 1.0);
+		color = mix(color, turned, cover.y / max(cover.x, 0.0001));
+	}
 	color *= 1.0 - macro_strength / 2.0 + macro_strength * bright;
 	color *= vec3(1.0) + hue_strength * (warm - 0.5) * vec3(2.0, 0.0, -2.0);
 	color += ridge * ridge_highlight;
@@ -122,7 +140,7 @@ void fragment() {
 		alpha *= surface.a;
 	}
 	if (use_cover) {
-		alpha *= coverage(world);
+		alpha *= cover.x;
 	}
 	if (fog_mode == 1) {
 		alpha *= 1.0 - visibility(world);  // the flat fog fades away where troops can see

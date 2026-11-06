@@ -93,7 +93,7 @@ var starting_room: Array[Vector2i] = []  # the pre-dug room's tiles; the fog kee
 var preview: Dictionary = {}  # the item about to be placed: {"origin", "size", "color", "valid"}, or empty
 var ground := TileMapLayer.new()  # draws rock and floor; only changed cells are updated
 var mycelium_layer := TileMapLayer.new()  # mycelium over the floor; its texture's clear parts show the floor
-var mycelium_image: Image  # one pixel per cell: white where there's mycelium; the shader fades between cells
+var mycelium_image: Image  # one pixel per cell: red channel = mycelium, green = the rival's; the shader fades between cells
 var mycelium_texture: ImageTexture
 var nav_region := NavigationRegion2D.new()  # the troops' walkable shape: doors open
 var raider_region := NavigationRegion2D.new()  # the raiders' walkable shape: finished doors closed
@@ -130,7 +130,7 @@ func _ready() -> void:
 	mycelium_layer.material = SurfaceMaterial.make(null, "mycelium")
 	mycelium_layer.material.set_shader_parameter("top_alpha", true)
 	mycelium_layer.material.set_shader_parameter("top_scale", MYCELIUM_SCALE)
-	mycelium_image = Image.create(GRID_WIDTH, GRID_HEIGHT, false, Image.FORMAT_L8)  # starts all black
+	mycelium_image = Image.create(GRID_WIDTH, GRID_HEIGHT, false, Image.FORMAT_RG8)  # starts all black
 	mycelium_texture = ImageTexture.create_from_image(mycelium_image)
 	mycelium_layer.material.set_shader_parameter("use_cover", true)
 	mycelium_layer.material.set_shader_parameter("cover_tex", mycelium_texture)
@@ -319,7 +319,7 @@ func _build_rival_room(center: Vector2i) -> void:
 				tiles[tile.x][tile.y] = Tile.FLOOR
 				rival_room.append(tile)
 				if max(abs(dx), abs(dy)) <= 4:
-					_add_mycelium(tile)
+					_add_mycelium(tile, true)
 					rival_mycelium.append(tile)
 	for side in [Vector2i(0, -1), Vector2i(0, 1)]:
 		var door_tile: Vector2i = center + side * 9 - Vector2i(1, 1)  # the door block's first cell
@@ -537,9 +537,9 @@ func _spread_mycelium() -> void:
 
 ## Adds mycelium to a cell. Its picture fades out across the border into the cells around it, so the
 ## layer draws those too; the shader works out how much shows where.
-func _add_mycelium(tile: Vector2i) -> void:
+func _add_mycelium(tile: Vector2i, rival := false) -> void:
 	mycelium[tile] = true
-	mycelium_image.set_pixelv(tile, Color.WHITE)
+	mycelium_image.set_pixelv(tile, Color(1.0, 1.0 if rival else 0.0, 0.0))  # the rival's shows red
 	mycelium_texture.update(mycelium_image)
 	for dx in range(-1, 2):
 		for dy in range(-1, 2):
