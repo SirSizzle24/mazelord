@@ -50,6 +50,7 @@ var fame := 0.0
 var history := {"raids_survived": 0, "raiders_downed": 0, "times_injured": 0, "injuries_survived": 0,
 	"rescues": 0, "cells_dug": 0, "builds": 0, "hauls": 0}
 var is_named := false
+var is_hero := false  # heroes carry a unique skill; their card glows (no way to become one yet)
 var troop_name := ""
 var awaiting_name := false  # fame reached the threshold; the player is choosing a name
 var service_time := 0.0

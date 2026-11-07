@@ -57,6 +57,10 @@ const ROOM_TYPES := {
 	"rotting_chamber": {"name": "Rotting chamber", "needs": ["rot_pit", "mister"]},
 }
 
+## Debug: troops summoned for free at the start (fighters, workers), to have a full roster to work with.
+## Set both to 0 to start normally.
+const DEBUG_START_FIGHTERS := 14
+const DEBUG_START_WORKERS := 6
 const SUMMON_TILE := Vector2i(91, 91)  # the summoning spot in the starting room (the grid's START_CENTER)
 
 const FREE_TROOPS := 2  # troops you can have before beds are needed
@@ -247,15 +251,27 @@ func add_mana(amount: int) -> void:
 	mana_changed.emit(mana)  # tell anyone listening, like the mana display
 
 
+func _ready() -> void:
+	_debug_start.call_deferred()  # after the grid and everything else are ready
+
+
+func _debug_start() -> void:
+	for i in DEBUG_START_FIGHTERS:
+		summon("roundhead", true)
+	for i in DEBUG_START_WORKERS:
+		summon("worker", true)
+
+
 ## Spends mana to create a troop at the summoning spot.
-## Returns false if there isn't enough mana or no room for another troop.
-func summon(type_id: String) -> bool:
-	if troop_count() >= troop_cap():
+## Returns false if there isn't enough mana or no room for another troop. free skips both (debug).
+func summon(type_id: String, free := false) -> bool:
+	if troop_count() >= troop_cap() and not free:
 		return false  # needs more beds
 	var troop_type: Dictionary = TROOP_TYPES[type_id]
-	if mana < troop_type["cost"]:
+	if mana < troop_type["cost"] and not free:
 		return false
-	add_mana(-troop_type["cost"])
+	if not free:
+		add_mana(-troop_type["cost"])
 
 	var unit: Node2D = unit_scene.instantiate()
 	unit.grid = grid

@@ -20,6 +20,9 @@ const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and ri
 const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
 const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
 const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
+## Debug: the first three cards of every deck show as unnamed, named and hero, to compare the frames.
+## Set false once heroes exist.
+const DEBUG_TIERS := true
 
 @export var dungeon: Node
 @export var roster_button: Button
@@ -130,6 +133,8 @@ func _new_card(unit: Node2D, large: bool, parent: Node) -> Control:
 	card.roster = self
 	card.unit = unit
 	card.large = large
+	if DEBUG_TIERS and deck.find(unit) in [0, 1, 2]:
+		card.tier_override = deck.find(unit)
 	parent.add_child(card)  # its _ready fills it in
 	return card
 

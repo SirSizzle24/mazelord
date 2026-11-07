@@ -2,8 +2,9 @@ extends Control
 ## One troop's card. Its layout lives in Scenes/card.tscn: move, restyle or swap its parts in the editor
 ## freely. The code finds them by their unique names (%NameLabel and so on), so the names are the only
 ## thing that must stay. The portrait can be a ColorRect (placeholder: it gets the troop's color) or a
-## TextureRect once there's art. The frame is a picture laid over everything but the text (%Frame isn't
-## needed by the code, so swap it freely); a named troop's name shows in gold.
+## TextureRect once there's art. The frame is a picture laid over everything but the text, and its
+## shader (card_frame.gdshader) shows the troop's rank: bronze unnamed, gold named, glowing gold for a
+## hero. Its colors are settings on %Frame's material. The name's color follows the rank too.
 ##
 ## The middle card of the roster is "large": it shows element arrows in a flight, follows your finger
 ## sideways and flips when you let go past SWIPE_DISTANCE, lifts when held still, and starts a drag onto
@@ -15,13 +16,14 @@ const SWIPE_DISTANCE := 80.0  # pixels sideways to flip instead of springing bac
 const DRAG_DISTANCE := 50.0  # pixels upward to start dragging onto a deck spot
 const LIFT_SCALE := 1.06
 const TILT := 0.0006  # radians of tilt per pixel of sideways swipe
-const NAMED_COLOR := Color(0.95, 0.78, 0.35)  # a named troop's name
-const UNNAMED_COLOR := Color(0.93, 0.88, 0.78)
+enum Tier { BRONZE, GOLD, HERO }  # unnamed, named, hero
+const NAME_COLORS := [Color(0.80, 0.62, 0.48), Color(0.95, 0.78, 0.35), Color(1.0, 0.90, 0.60)]
 
 var roster: Node  # set before the card enters the scene
 var unit: Node2D
 var large := false
 var rest_position := Vector2.ZERO  # where the middle card sits when nothing is moving it
+var tier_override := -1  # debug: show this rank instead of the troop's own (-1 for its own)
 
 var pressing := false
 var press_at := Vector2.ZERO  # global position where the press started
@@ -29,6 +31,7 @@ var held := 0.0
 var lifted := false
 
 @onready var shadow: Control = %Shadow  # shown under the card while it's lifted
+@onready var frame: CanvasItem = %Frame
 @onready var name_label: Label = %NameLabel
 @onready var portrait: Control = %Portrait
 @onready var type_label: Label = %TypeLabel
@@ -58,7 +61,10 @@ func refresh() -> void:
 	if not is_instance_valid(unit):
 		name_label.text = "(gone)"
 		return
-	name_label.add_theme_color_override("font_color", NAMED_COLOR if unit.is_named else UNNAMED_COLOR)
+	var tier := tier_for()
+	if frame.material is ShaderMaterial:
+		frame.material.set_shader_parameter("tier", tier)
+	name_label.add_theme_color_override("font_color", NAME_COLORS[tier])
 	if portrait is ColorRect:
 		portrait.color = unit.color  # placeholder until there's art
 	name_label.text = unit.roster_label
@@ -84,6 +90,15 @@ func refresh() -> void:
 		history_label.text = "Raids %d · Downed %d · Injured %d" % [h["raids_survived"],
 			h["raiders_downed"], h["times_injured"]] if not unit.can_dig \
 			else "Dug %d · Built %d · Hauled %d" % [h["cells_dug"], h["builds"], h["hauls"]]
+
+
+## The troop's rank, for the frame: hero, else named, else unnamed.
+func tier_for() -> int:
+	if tier_override >= 0:
+		return tier_override
+	if unit.is_hero:
+		return Tier.HERO
+	return Tier.GOLD if unit.is_named else Tier.BRONZE
 
 
 func _gui_input(event: InputEvent) -> void:

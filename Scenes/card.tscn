@@ -1,7 +1,14 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/card.gd" id="1_card"]
 [ext_resource type="Texture2D" path="res://Assets/UI/card_frame.png" id="2_frame"]
+[ext_resource type="Shader" path="res://scripts/card_frame.gdshader" id="3_tier"]
+[ext_resource type="Texture2D" path="res://Assets/UI/card_textbox.png" id="4_textbox"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_tier"]
+resource_local_to_scene = true
+shader = ExtResource("3_tier")
+shader_parameter/tier = 1
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_shadow"]
 bg_color = Color(0, 0, 0, 0.45)
@@ -55,6 +62,9 @@ mouse_filter = 2
 color = Color(0.5, 0.5, 0.5, 1)
 
 [node name="Frame" type="TextureRect" parent="."]
+unique_name_in_owner = true
+texture_filter = 4
+material = SubResource("ShaderMaterial_tier")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -76,70 +86,112 @@ text = "Name"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="Info" type="VBoxContainer" parent="."]
+[node name="TextBox" type="Control" parent="."]
 layout_mode = 1
-anchor_left = 0.069
+anchor_left = 0.1017
 anchor_top = 0.601
-anchor_right = 0.929
+anchor_right = 0.8963
 anchor_bottom = 0.92
-offset_left = 8.0
-offset_top = 6.0
-offset_right = -8.0
-offset_bottom = -4.0
 mouse_filter = 2
-theme_override_constants/separation = 2
 
-[node name="TypeLabel" type="Label" parent="Info"]
+[node name="TextBoxArt" type="TextureRect" parent="TextBox"]
+texture_filter = 4
+material = SubResource("ShaderMaterial_tier")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+texture = ExtResource("4_textbox")
+expand_mode = 1
+
+[node name="TypeLabel" type="Label" parent="TextBox"]
 unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 14
+layout_mode = 1
+anchor_left = 0.086
+anchor_top = 0.025
+anchor_right = 0.914
+anchor_bottom = 0.162
+theme_override_colors/font_color = Color(0.24, 0.16, 0.10, 1)
+theme_override_font_sizes/font_size = 12
 text = "Type · Size"
 horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="StatusLabel" type="Label" parent="Info"]
+[node name="Main" type="VBoxContainer" parent="TextBox"]
+layout_mode = 1
+anchor_left = 0.07
+anchor_top = 0.2
+anchor_right = 0.93
+anchor_bottom = 0.81
+mouse_filter = 2
+theme_override_constants/separation = 0
+alignment = 1
+
+[node name="StatusLabel" type="Label" parent="TextBox/Main"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.24, 0.16, 0.10, 1)
+theme_override_font_sizes/font_size = 12
 text = "Status"
+horizontal_alignment = 1
 
-[node name="ElementRow" type="HBoxContainer" parent="Info"]
+[node name="ElementRow" type="HBoxContainer" parent="TextBox/Main"]
 layout_mode = 2
 mouse_filter = 2
 alignment = 1
 
-[node name="PrevButton" type="Button" parent="Info/ElementRow"]
+[node name="PrevButton" type="Button" parent="TextBox/Main/ElementRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(36, 0)
+custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 11
 text = "<"
 
-[node name="ElementLabel" type="Label" parent="Info/ElementRow"]
+[node name="ElementLabel" type="Label" parent="TextBox/Main/ElementRow"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.24, 0.16, 0.10, 1)
+theme_override_font_sizes/font_size = 12
 text = "Element 1"
 
-[node name="NextButton" type="Button" parent="Info/ElementRow"]
+[node name="NextButton" type="Button" parent="TextBox/Main/ElementRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(36, 0)
+custom_minimum_size = Vector2(28, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 11
 text = ">"
 
-[node name="FameBar" type="ProgressBar" parent="Info"]
+[node name="HistoryLabel" type="Label" parent="TextBox/Main"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
+theme_override_colors/font_color = Color(0.24, 0.16, 0.10, 1)
+theme_override_font_sizes/font_size = 10
+text = "History"
+horizontal_alignment = 1
+
+[node name="Bottom" type="HBoxContainer" parent="TextBox"]
+layout_mode = 1
+anchor_left = 0.1
+anchor_top = 0.85
+anchor_right = 0.9
+anchor_bottom = 0.98
+mouse_filter = 2
+alignment = 1
+
+[node name="FameLabel" type="Label" parent="TextBox/Bottom"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.24, 0.16, 0.10, 1)
+theme_override_font_sizes/font_size = 10
+text = "Fame"
+vertical_alignment = 1
+
+[node name="FameBar" type="ProgressBar" parent="TextBox/Bottom"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 5)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
 mouse_filter = 2
 show_percentage = false
-
-[node name="FameLabel" type="Label" parent="Info"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "Fame"
-
-[node name="HistoryLabel" type="Label" parent="Info"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 12
-text = "History"
