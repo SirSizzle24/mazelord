@@ -27,6 +27,7 @@ var roster: Node  # set before the card enters the scene
 var unit: Node2D
 var large := false
 var rest_position := Vector2.ZERO  # where the middle card sits when nothing is moving it
+var mini := false  # a tiny card lying in a tray: no text, only the frame, portrait and rank
 var tier_override := -1  # debug: show this rank instead of the troop's own (-1 for its own)
 
 var pressing := false
@@ -56,6 +57,9 @@ func _ready() -> void:
 	var arrows: bool = large and unit.flight > 0
 	prev_button.visible = arrows
 	next_button.visible = arrows
+	if mini:
+		for part in [name_label, type_label, status_label.get_parent(), fame_bar.get_parent()]:
+			part.visible = false
 	prev_button.pressed.connect(func(): roster.change_element(unit, -1))
 	next_button.pressed.connect(func(): roster.change_element(unit, 1))
 	refresh()

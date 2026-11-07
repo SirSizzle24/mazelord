@@ -1,9 +1,31 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://scripts/roster.gd" id="1_roster"]
 [ext_resource type="Texture2D" path="res://Assets/UI/roster_table.png" id="2_table"]
+[ext_resource type="Shader" path="res://scripts/candle_flame.gdshader" id="3_flame"]
+[ext_resource type="Shader" path="res://scripts/glitter.gdshader" id="4_glitter"]
+[ext_resource type="Texture2D" path="res://Assets/UI/coins_mask.png" id="5_coins"]
 
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_none"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_flame"]
+shader = ExtResource("3_flame")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_glitter"]
+shader = ExtResource("4_glitter")
+shader_parameter/glint_mask = ExtResource("5_coins")
+
+[sub_resource type="Gradient" id="Gradient_gold"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(1, 0.82, 0.35, 0.35, 1, 0.7, 0.2, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_gold"]
+gradient = SubResource("Gradient_gold")
+width = 256
+height = 256
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
 
 [sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_add"]
 blend_mode = 1
@@ -101,10 +123,10 @@ expand_mode = 1
 unique_name_in_owner = true
 material = SubResource("CanvasItemMaterial_add")
 layout_mode = 1
-anchor_left = 0.7
-anchor_top = 0.27
-anchor_right = 1.03
-anchor_bottom = 1.0
+anchor_left = 0.75
+anchor_top = 0.33
+anchor_right = 1.075
+anchor_bottom = 1.03
 mouse_filter = 2
 texture = SubResource("GradientTexture2D_candle")
 expand_mode = 1
@@ -119,6 +141,34 @@ anchor_bottom = 0.4
 mouse_filter = 2
 texture = SubResource("GradientTexture2D_lantern")
 expand_mode = 1
+
+[node name="CandleFlame" type="ColorRect" parent="Table/TableArt"]
+material = SubResource("ShaderMaterial_flame")
+layout_mode = 1
+anchor_left = 0.9
+anchor_top = 0.585
+anchor_right = 0.925
+anchor_bottom = 0.705
+mouse_filter = 2
+
+[node name="CoinGlow" type="TextureRect" parent="Table/TableArt"]
+material = SubResource("CanvasItemMaterial_add")
+layout_mode = 1
+anchor_left = -0.04
+anchor_top = 0.76
+anchor_right = 0.14
+anchor_bottom = 1.08
+mouse_filter = 2
+texture = SubResource("GradientTexture2D_gold")
+expand_mode = 1
+
+[node name="CoinGlitter" type="ColorRect" parent="Table/TableArt"]
+material = SubResource("ShaderMaterial_glitter")
+layout_mode = 1
+anchor_top = 0.82
+anchor_right = 0.11
+anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="Vignette" type="TextureRect" parent="Table/TableArt"]
 layout_mode = 1

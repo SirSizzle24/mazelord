@@ -48,6 +48,9 @@ func _ask_next() -> void:
 			current = unit
 			break
 	visible = current != null
+	if visible:
+		move_to_front()  # over the roster, if it's open
+		announcement.move_to_front()
 	if current != null:
 		prompt.text = "A %s has earned a name!" % current.roster_label
 		name_box.text = dungeon.suggest_name()

@@ -17,6 +17,20 @@ extends PanelContainer
 
 const CardScene := preload("res://Scenes/card.tscn")
 const DeckSpotScene := preload("res://Scenes/deck_spot.tscn")
+## Each tray's slab corners, measured from the painting, as fractions of the tray's rect: top-left,
+## top-right, bottom-right, bottom-left (x, y each). The cards lying on it are drawn in this perspective.
+const TRAY_SLABS := [
+	[0.153, 0.260, 0.820, 0.260, 0.711, 0.860, 0.010, 0.860],
+	[0.146, 0.260, 0.854, 0.260, 0.813, 0.860, 0.048, 0.860],
+	[0.147, 0.260, 0.847, 0.260, 0.838, 0.860, 0.102, 0.860],
+	[0.143, 0.260, 0.845, 0.260, 0.882, 0.860, 0.145, 0.860],
+	[0.144, 0.260, 0.844, 0.260, 0.931, 0.860, 0.178, 0.860],
+	[0.155, 0.260, 0.852, 0.260, 1.004, 0.860, 0.259, 0.860],
+]
+## Each tray's shape, cut from the table picture, for its glow (in DECK_ORDER).
+const TRAY_MASKS := [preload("res://Assets/UI/Trays/tray_1.png"), preload("res://Assets/UI/Trays/tray_2.png"),
+	preload("res://Assets/UI/Trays/tray_3.png"), preload("res://Assets/UI/Trays/tray_4.png"),
+	preload("res://Assets/UI/Trays/tray_5.png"), preload("res://Assets/UI/Trays/tray_6.png")]
 const ELEMENTS_PER_FLIGHT := 4
 const DECK_ORDER := [1, 2, 3, 4, 5, 0]  # the spots, left to right: flights, then flightless
 ## Where each tray is in the table painting (roster_table.png), as fractions of the picture's width and
@@ -35,7 +49,7 @@ const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and ri
 const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
 const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
 const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
-const FLICKER := 0.18  # how much the candlelight wavers
+const FLICKER := 0.35  # how much the candlelight wavers
 const FLICKER_SPEED := 2.5  # how fast it wavers
 const RAID_WARNING := 30.0  # seconds before a raid when the clock turns red
 ## Debug: the first three cards of every deck show as unnamed, named and hero, to compare the frames.
@@ -86,6 +100,7 @@ func _on_troop_summoned(_unit: Node2D) -> void:
 func _on_roster_toggled(toggled_on: bool) -> void:
 	visible = toggled_on
 	if toggled_on:
+		move_to_front()  # over the HUD and debug buttons (the naming panel brings itself in front of this)
 		_rebuild()
 
 
@@ -141,9 +156,15 @@ func _rebuild_spots() -> void:
 		var spot := DeckSpotScene.instantiate()
 		spot.roster = self
 		spot.number = n
-		if n != current_deck:  # the open deck's spot stays empty
-			var deck_name := "Flight %d" % n if n > 0 else "Flightless"
-			spot.caption = "%s\n%d troops" % [deck_name, _collect(n).size()]
+		spot.mask = TRAY_MASKS[i]
+		var slab: Array = TRAY_SLABS[i]
+		spot.slab_corners = PackedVector2Array([Vector2(slab[0], slab[1]), Vector2(slab[2], slab[3]),
+			Vector2(slab[4], slab[5]), Vector2(slab[6], slab[7])])
+		var members := _collect(n)
+		var deck_name := "Flight %d" % n if n > 0 else "Flightless"
+		spot.caption = "%s · %d" % [deck_name, members.size()]
+		spot.open = n == current_deck  # its cards are out on the table, so its tray is bare
+		spot.cards = members
 		# Pinned to its tray in the picture: anchors are fractions of the picture's size.
 		var tray: Rect2 = TRAY_RECTS[i]
 		spot.anchor_left = tray.position.x
@@ -164,11 +185,14 @@ func _spot_for(number: int) -> Control:
 	return null
 
 
-func _new_card(unit: Node2D, large: bool, parent: Node) -> Control:
+## Makes a card for a troop and puts it under parent. mini is for the trays' stacks: no text, just the
+## frame, the portrait and the rank, since words can't be read that small.
+func new_card(unit: Node2D, large: bool, parent: Node, mini := false) -> Control:
 	var card := CardScene.instantiate()
 	card.roster = self
 	card.unit = unit
 	card.large = large
+	card.mini = mini
 	if DEBUG_TIERS and deck.find(unit) in [0, 1, 2]:
 		card.tier_override = deck.find(unit)
 	parent.add_child(card)  # its _ready fills it in
@@ -200,7 +224,7 @@ func _show_card() -> void:
 		_fill_pile(left_pile, [])
 		_fill_pile(right_pile, [])
 		return
-	center_card = _new_card(deck[index], true, stage)
+	center_card = new_card(deck[index], true, stage)
 	center_card.rest_position = _rest_position(center_card)
 	center_card.position = center_card.rest_position
 	_fill_pile(left_pile, _behind())
@@ -221,15 +245,21 @@ func _update_count() -> void:
 	count_label.text = "%d / %d" % [index + 1, deck.size()] if not deck.is_empty() else ""
 
 
-## Stacks the first few cards face up, the first on top, each a little further down and right.
+## Where a pile's top card sits (its corner, inside the pile) when the pile holds count cards. The bottom
+## card stays put and each card above sits a little higher and further left, so a pile grows upward.
+func _pile_top(count: int) -> Vector2:
+	return Vector2.ONE * PILE_OFFSET * (PILE_DEPTH - min(PILE_DEPTH, count))
+
+
+## Stacks the first few cards face up, the first on top.
 func _fill_pile(pile: Control, cards: Array) -> void:
 	for child in pile.get_children():
 		child.queue_free()
 	var shown: int = min(PILE_DEPTH, cards.size())
 	for i in range(shown - 1, -1, -1):  # the bottom card first, so the top one draws last
-		var card := _new_card(cards[i], false, pile)
+		var card := new_card(cards[i], false, pile)
 		card.scale = Vector2.ONE * PILE_SCALE
-		card.position = Vector2(i, i) * PILE_OFFSET
+		card.position = _pile_top(shown) + Vector2(i, i) * PILE_OFFSET  # i = 0 is the top card
 	if cards.size() > PILE_DEPTH:
 		var more := Label.new()
 		more.text = "+%d more" % (cards.size() - PILE_DEPTH)
@@ -257,20 +287,23 @@ func flip(step: int) -> void:
 	var to_pile: Control = left_pile if step > 0 else right_pile
 	var from_pile: Control = right_pile if step > 0 else left_pile
 	var outgoing := center_card
+	var from_count: int = (_ahead() if step > 0 else _behind()).size()  # before the flip
 	index = next
 	_update_count()
+	var to_count: int = (_behind() if step > 0 else _ahead()).size()  # after it, with the card landed
 
 	# The incoming card starts exactly where the top of its pile was, at pile size.
-	var incoming := _new_card(deck[index], true, fly_layer)
+	var incoming := new_card(deck[index], true, fly_layer)
 	incoming.rest_position = _rest_position(incoming)
 	incoming.scale = Vector2.ONE * PILE_SCALE
-	incoming.global_position = _position_for(incoming, from_pile.global_position, PILE_SCALE)
+	incoming.global_position = _position_for(incoming, from_pile.global_position + _pile_top(from_count),
+		PILE_SCALE)
 	_fill_pile(from_pile, _ahead() if step > 0 else _behind())  # its top card has risen out of it
 	_move_to(outgoing, fly_layer)
 
 	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tween.tween_property(outgoing, "global_position",
-		_position_for(outgoing, to_pile.global_position, PILE_SCALE), FLY_TIME)
+		_position_for(outgoing, to_pile.global_position + _pile_top(to_count), PILE_SCALE), FLY_TIME)
 	tween.tween_property(outgoing, "scale", Vector2.ONE * PILE_SCALE, FLY_TIME)
 	tween.tween_property(outgoing, "rotation", 0.0, FLY_TIME)
 	tween.tween_property(incoming, "global_position",
@@ -293,7 +326,7 @@ func _finish_flip(outgoing: Control, incoming: Control, to_pile: Control, step: 
 func start_drag(card: Control) -> void:
 	dragged_card = card
 	var holder := Control.new()  # the preview is drawn with its top-left at the finger, so offset it
-	var ghost := _new_card(card.unit, false, holder)
+	var ghost := new_card(card.unit, false, holder)
 	ghost.scale = Vector2.ONE * 0.5
 	ghost.position = -ghost.custom_minimum_size * 0.25  # half of half size: centered on the finger
 	card.force_drag({"unit": card.unit}, holder)
@@ -311,7 +344,7 @@ func _notification(what: int) -> void:
 ## A card was dropped on a deck spot: the troop moves to that flight (element 1), or out of flights.
 ## A small copy shrinks into the spot, which bumps, and the next card takes the middle.
 func card_dropped(number: int, unit: Node2D, spot_center: Vector2) -> void:
-	var ghost := _new_card(unit, false, fly_layer)
+	var ghost := new_card(unit, false, fly_layer)
 	ghost.scale = Vector2.ONE * 0.5
 	ghost.global_position = get_global_mouse_position() - ghost.custom_minimum_size * 0.25
 	var tween := create_tween().set_parallel()
