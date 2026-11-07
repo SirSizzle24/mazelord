@@ -57,7 +57,7 @@ var card_size := Vector2.ZERO  # the card scene's size, read once from the scene
 var flicker_noise := FastNoiseLite.new()
 var flicker_time := 0.0
 
-@onready var deck_spots: HBoxContainer = %DeckSpots
+@onready var deck_spots: Control = %DeckSpots  # spots are pinned over the trays in the table picture
 @onready var left_pile: Control = %LeftPile
 @onready var right_pile: Control = %RightPile
 @onready var stage: Control = %CardStage  # where the middle card sits
