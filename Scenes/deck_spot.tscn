@@ -3,9 +3,9 @@
 [ext_resource type="Script" path="res://scripts/deck_spot.gd" id="1_spot"]
 
 [node name="DeckSpot" type="PanelContainer"]
-custom_minimum_size = Vector2(150, 64)
-offset_right = 150.0
-offset_bottom = 64.0
+custom_minimum_size = Vector2(160, 72)
+offset_right = 160.0
+offset_bottom = 72.0
 script = ExtResource("1_spot")
 
 [node name="Caption" type="Label" parent="."]

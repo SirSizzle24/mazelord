@@ -7,8 +7,12 @@ extends PanelContainer
 ## to open that deck, or pull the middle card up and drop it on one to move the troop there.
 ## Long-press a troop on the map to open the roster at its card.
 ##
+## The roster takes the whole screen: a stone war table in candlelight, with the decks' trays along the
+## far edge. The game keeps running behind it, so the top bar shows the raid clock.
 ## The screen's layout lives in Scenes/roster.tscn and each card's in Scenes/card.tscn, so both can be
 ## restyled in the editor. The code finds the parts by their unique names (%DeckSpots and so on).
+## The table is placeholder art (the wall texture, a candle glow and a vignette): replace the Table
+## node's children with your painting.
 
 const CardScene := preload("res://Scenes/card.tscn")
 const DeckSpotScene := preload("res://Scenes/deck_spot.tscn")
@@ -20,12 +24,16 @@ const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and ri
 const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
 const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
 const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
+const FLICKER := 0.18  # how much the candlelight wavers
+const FLICKER_SPEED := 2.5  # how fast it wavers
+const RAID_WARNING := 30.0  # seconds before a raid when the clock turns red
 ## Debug: the first three cards of every deck show as unnamed, named and hero, to compare the frames.
 ## Set false once heroes exist.
 const DEBUG_TIERS := true
 
 @export var dungeon: Node
 @export var roster_button: Button
+@export var raids: Node  # for the raid clock in the top bar
 
 var current_deck := 0  # the open deck: 1 to 5 for that flight, 0 for flightless
 var deck: Array = []  # the troops in the open deck, in order
@@ -35,6 +43,8 @@ var dragged_card: Control = null  # the middle card while it's being dragged ont
 var animating := false  # a card is sliding; swipes wait until it lands
 var refresh_left := 0.0
 var card_size := Vector2.ZERO  # the card scene's size, read once from the scene itself
+var flicker_noise := FastNoiseLite.new()
+var flicker_time := 0.0
 
 @onready var deck_spots: HBoxContainer = %DeckSpots
 @onready var left_pile: Control = %LeftPile
@@ -42,6 +52,9 @@ var card_size := Vector2.ZERO  # the card scene's size, read once from the scene
 @onready var stage: Control = %CardStage  # where the middle card sits
 @onready var count_label: Label = %CountLabel
 @onready var fly_layer: Control = %FlyLayer  # over everything, so sliding cards pass above the piles
+@onready var close_button: Button = %CloseButton
+@onready var raid_label: Label = %RaidLabel
+@onready var candle_light: CanvasItem = %CandleLight
 
 
 func _ready() -> void:
@@ -50,6 +63,7 @@ func _ready() -> void:
 	card_size = probe.custom_minimum_size
 	probe.free()
 	roster_button.toggled.connect(_on_roster_toggled)
+	close_button.pressed.connect(func(): roster_button.button_pressed = false)
 	dungeon.troop_summoned.connect(_on_troop_summoned)
 
 
@@ -290,6 +304,21 @@ func card_dropped(number: int, unit: Node2D, spot_center: Vector2) -> void:
 		spot.pulse()
 
 
+## The game keeps running while the roster is open, so the top bar says when the next raid comes.
+func _update_raid_label() -> void:
+	if raids == null:
+		raid_label.text = ""
+		return
+	if raids.active:
+		raid_label.text = "RAID IN PROGRESS"
+		raid_label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.3))
+		return
+	var seconds := maxi(ceili(raids.countdown), 0)
+	raid_label.text = "Next raid in %d:%02d" % [seconds / 60, seconds % 60]
+	var warn: bool = raids.countdown <= RAID_WARNING
+	raid_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4) if warn else Color(0.9, 0.85, 0.75))
+
+
 ## The arrows on a card: moves the troop one element up or down within its flight.
 func change_element(unit: Node2D, step: int) -> void:
 	unit.set_flight(unit.flight, clampi(unit.element + step, 1, ELEMENTS_PER_FLIGHT))
@@ -299,6 +328,10 @@ func change_element(unit: Node2D, step: int) -> void:
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	# The candle wavers a little; noise, not a sine wave, so it never looks like it's on a loop.
+	flicker_time += delta * FLICKER_SPEED
+	candle_light.modulate.a = 1.0 - FLICKER * (0.5 + 0.5 * flicker_noise.get_noise_1d(flicker_time * 40.0))
+	_update_raid_label()
 	# Refresh the cards' text (status, history...) without rebuilding, so nothing in motion is disturbed.
 	refresh_left -= delta
 	if refresh_left <= 0.0:

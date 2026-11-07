@@ -260,13 +260,10 @@ offset_bottom = 483.0
 toggle_mode = true
 text = "Roster"
 
-[node name="RosterPanel" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button") instance=ExtResource("12_roster")]
-offset_left = 140.0
-offset_top = 60.0
-offset_right = 1240.0
-offset_bottom = 700.0
+[node name="RosterPanel" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button", "raids") instance=ExtResource("12_roster")]
 dungeon = NodePath("../../Dungeon")
 roster_button = NodePath("../RosterButton")
+raids = NodePath("../../Raids")
 
 [node name="DebugRaiderButton" type="Button" parent="UI"]
 offset_left = 270.0

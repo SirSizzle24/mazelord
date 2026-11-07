@@ -1,12 +1,11 @@
 extends PanelContainer
-## A deck spot above the roster: tap it to open that deck, or drop the middle card on it to move the
-## troop there. Laid out in Scenes/deck_spot.tscn; restyle it freely, keeping the %Caption name.
+## A deck's tray, recessed into the far edge of the war table: tap it to open that deck, or drop the
+## middle card on it to move the troop there. Laid out in Scenes/deck_spot.tscn; restyle it freely, keeping the %Caption name.
 ## While a card is being dragged, every spot that can take it glows, and the one under your finger grows.
-## The open deck's spot is empty: an outline with nothing to tap or drop on.
+## The open deck's tray is empty (its cards are out on the table), with nothing to tap or drop on.
 
 const HOVER_SCALE := 1.1
 const GLOW := Color(1.3, 1.2, 0.85)  # tint while a drag is in progress
-const EMPTY_OUTLINE := Color(1.0, 1.0, 1.0, 0.15)
 
 var roster: Node  # set before the spot enters the scene
 var number := 0  # 1 to 5 for a flight, 0 for flightless
@@ -18,14 +17,15 @@ var hovering := false
 
 func _ready() -> void:
 	pivot_offset = custom_minimum_size / 2.0  # grow from the middle
+	var tray := StyleBoxFlat.new()  # placeholder: a dark recess with a faint lit lip at the bottom
+	tray.bg_color = Color(0.05, 0.04, 0.035, 0.85)
+	tray.border_width_bottom = 2
+	tray.border_color = Color(0.85, 0.65, 0.4, 0.35)
+	tray.set_corner_radius_all(6)
+	tray.set_content_margin_all(6)
+	add_theme_stylebox_override("panel", tray)
 	if caption == "":
-		var outline := StyleBoxFlat.new()
-		outline.draw_center = false
-		outline.set_border_width_all(2)
-		outline.border_color = EMPTY_OUTLINE
-		outline.set_corner_radius_all(6)
-		add_theme_stylebox_override("panel", outline)
-		caption_label.visible = false
+		caption_label.visible = false  # the open deck's tray: its cards are out on the table
 	else:
 		caption_label.text = caption
 	mouse_exited.connect(func(): _set_hover(false))

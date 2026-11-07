@@ -1,47 +1,147 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/roster.gd" id="1_roster"]
+[ext_resource type="Texture2D" path="res://Assets/wall_top.png" id="2_stone"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_none"]
+
+[sub_resource type="Gradient" id="Gradient_candle"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(1, 0.72, 0.38, 0.55, 1, 0.6, 0.3, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_candle"]
+gradient = SubResource("Gradient_candle")
+width = 512
+height = 512
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_add"]
+blend_mode = 1
+
+[sub_resource type="Gradient" id="Gradient_vignette"]
+offsets = PackedFloat32Array(0.45, 1)
+colors = PackedColorArray(0, 0, 0, 0, 0, 0, 0, 0.85)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_vignette"]
+gradient = SubResource("Gradient_vignette")
+width = 512
+height = 512
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(1, 1)
 
 [node name="RosterPanel" type="PanelContainer"]
-offset_right = 1100.0
-offset_bottom = 640.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_none")
 script = ExtResource("1_roster")
 
-[node name="Column" type="VBoxContainer" parent="."]
+[node name="Table" type="Control" parent="."]
 layout_mode = 2
+mouse_filter = 1
 
-[node name="DeckSpots" type="HBoxContainer" parent="Column"]
+[node name="Surface" type="TextureRect" parent="Table"]
+modulate = Color(0.42, 0.4, 0.38, 1)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+texture = ExtResource("2_stone")
+expand_mode = 1
+stretch_mode = 1
+
+[node name="CandleLight" type="TextureRect" parent="Table"]
+unique_name_in_owner = true
+material = SubResource("CanvasItemMaterial_add")
+layout_mode = 1
+anchors_preset = 15
+anchor_left = 0.15
+anchor_top = 0.05
+anchor_right = 0.85
+anchor_bottom = 1.05
+mouse_filter = 2
+texture = SubResource("GradientTexture2D_candle")
+expand_mode = 1
+
+[node name="Vignette" type="TextureRect" parent="Table"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+texture = SubResource("GradientTexture2D_vignette")
+expand_mode = 1
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="TopRow" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="CloseButton" type="Button" parent="Margin/Column/TopRow"]
 unique_name_in_owner = true
 layout_mode = 2
+text = "Back to the dungeon"
+
+[node name="Spacer" type="Control" parent="Margin/Column/TopRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="RaidLabel" type="Label" parent="Margin/Column/TopRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Next raid in 0:00"
+
+[node name="DeckSpots" type="HBoxContainer" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 14
 alignment = 1
 
-[node name="DeckRow" type="HBoxContainer" parent="Column"]
+[node name="DeckRow" type="HBoxContainer" parent="Margin/Column"]
 layout_mode = 2
 size_flags_vertical = 3
 alignment = 1
 
-[node name="LeftPile" type="Control" parent="Column/DeckRow"]
+[node name="LeftPile" type="Control" parent="Margin/Column/DeckRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(240, 360)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 
-[node name="CardStage" type="Control" parent="Column/DeckRow"]
+[node name="CardStage" type="Control" parent="Margin/Column/DeckRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(400, 510)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 
-[node name="RightPile" type="Control" parent="Column/DeckRow"]
+[node name="RightPile" type="Control" parent="Margin/Column/DeckRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(240, 360)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 
-[node name="CountLabel" type="Label" parent="Column"]
+[node name="CountLabel" type="Label" parent="Margin/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "1 / 1"
