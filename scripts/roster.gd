@@ -1,332 +1,306 @@
 extends PanelContainer
-## Troop cards, like a trading card game: name banner, picture, type and size, stats, status, assignment
-## and fame. Tap a card to see it large, with the troop's history. The main view shows flightless
-## fighters, with five flight slots to drag cards onto, and the workers below (workers can't join
-## flights). Tap a flight slot to open that flight's deck, with four element slots and a "Remove from
-## flight" slot. Long-press a troop on the map to open its card.
+## The roster: your troops as trading cards in six decks, one per flight plus the flightless deck
+## (fighters in no flight, then workers). The card you're looking at hovers large in the middle, with the
+## cards you've passed in a face-up pile on the left and the cards still to come in a face-up pile on the
+## right. Swipe the middle card: it follows your finger, and past a point it slides onto a pile while the
+## next card rises from the other. Above sit spots for the six decks, the open one left empty: tap a spot
+## to open that deck, or pull the middle card up and drop it on one to move the troop there.
+## Long-press a troop on the map to open the roster at its card.
+##
+## The screen's layout lives in Scenes/roster.tscn and each card's in Scenes/card.tscn, so both can be
+## restyled in the editor. The code finds the parts by their unique names (%DeckSpots and so on).
 
-const MAX_FLIGHTS := 5
+const CardScene := preload("res://Scenes/card.tscn")
+const DeckSpotScene := preload("res://Scenes/deck_spot.tscn")
 const ELEMENTS_PER_FLIGHT := 4
+const DECK_ORDER := [1, 2, 3, 4, 5, 0]  # the spots, left to right: flights, then flightless
 const REFRESH_TIME := 0.5  # seconds between updates of the cards' text while open
-const CARD_COLUMNS := 5
+const PILE_SCALE := 0.62  # pile cards are the middle card shrunk
+const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and right
+const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
+const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
+const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
 
 @export var dungeon: Node
 @export var roster_button: Button
 
-var view_flight := 0  # 0 for the main view, 1 to 5 for that flight's deck
-var highlighted: Node2D = null  # the troop whose card was opened by long press
+var current_deck := 0  # the open deck: 1 to 5 for that flight, 0 for flightless
+var deck: Array = []  # the troops in the open deck, in order
+var index := 0  # which of them is in the middle
+var center_card: Control = null
+var dragged_card: Control = null  # the middle card while it's being dragged onto a spot
+var animating := false  # a card is sliding; swipes wait until it lands
 var refresh_left := 0.0
+var card_size := Vector2.ZERO  # the card scene's size, read once from the scene itself
 
-var header: Label
-var back_button: Button
-var slot_row: HBoxContainer
-var card_grid: GridContainer
-var workers_title: Label
-var worker_grid: GridContainer
-var detail_layer: PanelContainer  # covers the roster while one card is shown large
-var detail_holder: VBoxContainer
-var detail_card: Card = null
+@onready var deck_spots: HBoxContainer = %DeckSpots
+@onready var left_pile: Control = %LeftPile
+@onready var right_pile: Control = %RightPile
+@onready var stage: Control = %CardStage  # where the middle card sits
+@onready var count_label: Label = %CountLabel
+@onready var fly_layer: Control = %FlyLayer  # over everything, so sliding cards pass above the piles
 
 
 func _ready() -> void:
 	visible = false
-	_build_layout()
+	var probe := CardScene.instantiate()
+	card_size = probe.custom_minimum_size
+	probe.free()
 	roster_button.toggled.connect(_on_roster_toggled)
-	dungeon.troop_summoned.connect(func(_unit): _rebuild())
+	dungeon.troop_summoned.connect(_on_troop_summoned)
 
 
-## Everything inside the panel is made in code, so the layout lives in one readable place.
-func _build_layout() -> void:
-	var column := VBoxContainer.new()
-	add_child(column)
-
-	var top := HBoxContainer.new()
-	back_button = Button.new()
-	back_button.text = "< Back"
-	back_button.pressed.connect(func(): open_flight(0))
-	top.add_child(back_button)
-	header = Label.new()
-	top.add_child(header)
-	column.add_child(top)
-
-	slot_row = HBoxContainer.new()
-	column.add_child(slot_row)
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-	card_grid = GridContainer.new()
-	card_grid.columns = CARD_COLUMNS
-	list.add_child(card_grid)
-	workers_title = Label.new()
-	workers_title.text = "Workers (can't join flights)"
-	list.add_child(workers_title)
-	worker_grid = GridContainer.new()
-	worker_grid.columns = CARD_COLUMNS
-	list.add_child(worker_grid)
-
-	# The large card, over everything else. A PanelContainer's children all fill it, so this one
-	# covers the list; its dim background also stops taps reaching the cards underneath.
-	detail_layer = PanelContainer.new()
-	var dim := StyleBoxFlat.new()
-	dim.bg_color = Color(0.0, 0.0, 0.0, 0.7)
-	detail_layer.add_theme_stylebox_override("panel", dim)
-	detail_layer.visible = false
-	add_child(detail_layer)
-	var center := CenterContainer.new()
-	detail_layer.add_child(center)
-	detail_holder = VBoxContainer.new()
-	center.add_child(detail_holder)
-	var close := Button.new()
-	close.text = "Close"
-	close.pressed.connect(close_detail)
-	detail_holder.add_child(close)
-
-
-## Shows one troop's card large, with its history.
-func show_detail(unit: Node2D) -> void:
-	close_detail()
-	detail_card = Card.new(self, unit, false, false, true)
-	detail_holder.add_child(detail_card)
-	detail_holder.move_child(detail_card, 0)  # above the Close button
-	detail_layer.visible = true
-
-
-func close_detail() -> void:
-	if detail_card != null:
-		detail_card.queue_free()
-		detail_card = null
-	detail_layer.visible = false
+func _on_troop_summoned(_unit: Node2D) -> void:
+	if visible:
+		_rebuild()
 
 
 func _on_roster_toggled(toggled_on: bool) -> void:
 	visible = toggled_on
 	if toggled_on:
 		_rebuild()
-	else:
-		highlighted = null
-		close_detail()
 
 
-## Opens the deck holding this troop, with its card highlighted.
+## Opens the roster at this troop's card, in its deck.
 func open_for(unit: Node2D) -> void:
-	highlighted = unit
-	view_flight = unit.flight
-	if roster_button.button_pressed:
-		_rebuild()
-	else:
+	current_deck = unit.flight
+	if not roster_button.button_pressed:
 		roster_button.button_pressed = true  # opening runs _rebuild
+	_rebuild(unit)
 
 
-func open_flight(flight: int) -> void:
-	view_flight = flight
+## Opens a deck: 1 to 5 for a flight, 0 for flightless. Tapping a deck spot does this.
+func open_deck(number: int) -> void:
+	if animating:
+		return
+	current_deck = number
+	index = 0
+	deck = []  # forget the old deck, so _rebuild starts at its first card
 	_rebuild()
+
+
+## The troops in a deck. A flight's deck is in element order; the flightless deck is fighters, then workers.
+func _collect(number: int) -> Array:
+	var troops: Array = get_tree().get_nodes_in_group("units")
+	if number == 0:
+		var fighters := troops.filter(func(unit): return not unit.can_dig and unit.flight == 0)
+		var workers := troops.filter(func(unit): return unit.can_dig)
+		return fighters + workers
+	var members := troops.filter(func(unit): return unit.flight == number)
+	members.sort_custom(func(a, b): return a.element < b.element)
+	return members
+
+
+## Gathers the deck again and redraws, keeping the same troop in the middle if it's still in this deck
+## (or the one asked for).
+func _rebuild(keep: Node2D = null) -> void:
+	if keep == null and index < deck.size() and is_instance_valid(deck[index]):
+		keep = deck[index]
+	deck = _collect(current_deck)
+	if keep != null and deck.has(keep):
+		index = deck.find(keep)
+	else:
+		index = clampi(index, 0, max(deck.size() - 1, 0))
+	_rebuild_spots()
+	_show_card()
+
+
+func _rebuild_spots() -> void:
+	for child in deck_spots.get_children():
+		child.queue_free()
+	for n in DECK_ORDER:
+		var spot := DeckSpotScene.instantiate()
+		spot.roster = self
+		spot.number = n
+		if n != current_deck:  # the open deck's spot stays empty
+			var deck_name := "Flight %d" % n if n > 0 else "Flightless"
+			spot.caption = "%s\n%d troops" % [deck_name, _collect(n).size()]
+		deck_spots.add_child(spot)
+
+
+func _spot_for(number: int) -> Control:
+	for spot in deck_spots.get_children():
+		if spot.number == number and not spot.is_queued_for_deletion():
+			return spot
+	return null
+
+
+func _new_card(unit: Node2D, large: bool, parent: Node) -> Control:
+	var card := CardScene.instantiate()
+	card.roster = self
+	card.unit = unit
+	card.large = large
+	parent.add_child(card)  # its _ready fills it in
+	return card
+
+
+## Where a middle card rests: centered on the stage.
+func _rest_position(card: Control) -> Vector2:
+	return (stage.custom_minimum_size - card.custom_minimum_size) / 2.0
+
+
+## Where to put a card (by its position) so that, at this scale, its top-left corner lands on corner.
+## A card scales around its pivot, so the corner moves when the scale changes.
+func _position_for(card: Control, corner: Vector2, at_scale: float) -> Vector2:
+	return corner - card.pivot_offset * (1.0 - at_scale)
+
+
+## Puts the current card in the middle and fills both piles, without animating.
+func _show_card() -> void:
+	for child in stage.get_children():
+		child.queue_free()
+	center_card = null
+	_update_count()
+	if deck.is_empty():
+		var empty := Label.new()
+		empty.text = "No troops in this deck"
+		empty.position = stage.custom_minimum_size / 2.0 - Vector2(90, 10)
+		stage.add_child(empty)
+		_fill_pile(left_pile, [])
+		_fill_pile(right_pile, [])
+		return
+	center_card = _new_card(deck[index], true, stage)
+	center_card.rest_position = _rest_position(center_card)
+	center_card.position = center_card.rest_position
+	_fill_pile(left_pile, _behind())
+	_fill_pile(right_pile, _ahead())
+
+
+func _behind() -> Array:
+	var cards := deck.slice(0, index)
+	cards.reverse()  # the card just passed is on top
+	return cards
+
+
+func _ahead() -> Array:
+	return deck.slice(index + 1)
+
+
+func _update_count() -> void:
+	count_label.text = "%d / %d" % [index + 1, deck.size()] if not deck.is_empty() else ""
+
+
+## Stacks the first few cards face up, the first on top, each a little further down and right.
+func _fill_pile(pile: Control, cards: Array) -> void:
+	for child in pile.get_children():
+		child.queue_free()
+	var shown: int = min(PILE_DEPTH, cards.size())
+	for i in range(shown - 1, -1, -1):  # the bottom card first, so the top one draws last
+		var card := _new_card(cards[i], false, pile)
+		card.scale = Vector2.ONE * PILE_SCALE
+		card.position = Vector2(i, i) * PILE_OFFSET
+	if cards.size() > PILE_DEPTH:
+		var more := Label.new()
+		more.text = "+%d more" % (cards.size() - PILE_DEPTH)
+		more.position = Vector2(0, card_size.y * PILE_SCALE + PILE_DEPTH * PILE_OFFSET)
+		pile.add_child(more)
+
+
+## Moves a card to another parent without it jumping on screen.
+func _move_to(card: Control, parent: Node) -> void:
+	var at := card.global_position
+	card.get_parent().remove_child(card)
+	parent.add_child(card)
+	card.global_position = at
+
+
+## Flips through the deck: 1 for the next card, -1 for the previous one. The middle card slides onto
+## the pile behind it while the next card rises from the other pile into the middle.
+func flip(step: int) -> void:
+	var next := index + step
+	if animating or center_card == null or next < 0 or next >= deck.size():
+		if center_card != null:
+			center_card.spring_back()  # the end of the deck: nowhere to go
+		return
+	animating = true
+	var to_pile: Control = left_pile if step > 0 else right_pile
+	var from_pile: Control = right_pile if step > 0 else left_pile
+	var outgoing := center_card
+	index = next
+	_update_count()
+
+	# The incoming card starts exactly where the top of its pile was, at pile size.
+	var incoming := _new_card(deck[index], true, fly_layer)
+	incoming.rest_position = _rest_position(incoming)
+	incoming.scale = Vector2.ONE * PILE_SCALE
+	incoming.global_position = _position_for(incoming, from_pile.global_position, PILE_SCALE)
+	_fill_pile(from_pile, _ahead() if step > 0 else _behind())  # its top card has risen out of it
+	_move_to(outgoing, fly_layer)
+
+	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(outgoing, "global_position",
+		_position_for(outgoing, to_pile.global_position, PILE_SCALE), FLY_TIME)
+	tween.tween_property(outgoing, "scale", Vector2.ONE * PILE_SCALE, FLY_TIME)
+	tween.tween_property(outgoing, "rotation", 0.0, FLY_TIME)
+	tween.tween_property(incoming, "global_position",
+		stage.global_position + incoming.rest_position, FLY_TIME)
+	tween.tween_property(incoming, "scale", Vector2.ONE, FLY_TIME)
+	tween.chain().tween_callback(_finish_flip.bind(outgoing, incoming, to_pile, step))
+
+
+## The slide is over: the old middle card joins its pile and the new one settles on the stage.
+func _finish_flip(outgoing: Control, incoming: Control, to_pile: Control, step: int) -> void:
+	outgoing.queue_free()
+	_fill_pile(to_pile, _behind() if step > 0 else _ahead())
+	_move_to(incoming, stage)
+	incoming.position = incoming.rest_position
+	center_card = incoming
+	animating = false
+
+
+## The middle card was pulled up: it fades where it was, and a small copy follows your finger.
+func start_drag(card: Control) -> void:
+	dragged_card = card
+	var holder := Control.new()  # the preview is drawn with its top-left at the finger, so offset it
+	var ghost := _new_card(card.unit, false, holder)
+	ghost.scale = Vector2.ONE * 0.5
+	ghost.position = -ghost.custom_minimum_size * 0.25  # half of half size: centered on the finger
+	card.force_drag({"unit": card.unit}, holder)
+	card.modulate.a = 0.25
+
+
+func _notification(what: int) -> void:
+	# A drag that didn't land on a spot: the middle card comes back.
+	if what == NOTIFICATION_DRAG_END and dragged_card != null:
+		if is_instance_valid(dragged_card) and not get_viewport().gui_is_drag_successful():
+			create_tween().tween_property(dragged_card, "modulate:a", 1.0, 0.15)
+		dragged_card = null
+
+
+## A card was dropped on a deck spot: the troop moves to that flight (element 1), or out of flights.
+## A small copy shrinks into the spot, which bumps, and the next card takes the middle.
+func card_dropped(number: int, unit: Node2D, spot_center: Vector2) -> void:
+	var ghost := _new_card(unit, false, fly_layer)
+	ghost.scale = Vector2.ONE * 0.5
+	ghost.global_position = get_global_mouse_position() - ghost.custom_minimum_size * 0.25
+	var tween := create_tween().set_parallel()
+	tween.tween_property(ghost, "global_position", spot_center, DROP_TIME)
+	tween.tween_property(ghost, "scale", Vector2.ONE * 0.05, DROP_TIME)
+	tween.tween_property(ghost, "modulate:a", 0.0, DROP_TIME)
+	tween.chain().tween_callback(ghost.queue_free)
+	unit.set_flight(number, 1)
+	_rebuild()  # it left this deck
+	var spot := _spot_for(number)
+	if spot != null:
+		spot.pulse()
+
+
+## The arrows on a card: moves the troop one element up or down within its flight.
+func change_element(unit: Node2D, step: int) -> void:
+	unit.set_flight(unit.flight, clampi(unit.element + step, 1, ELEMENTS_PER_FLIGHT))
+	_rebuild(unit)
 
 
 func _process(delta: float) -> void:
 	if not visible:
 		return
-	# Refresh the cards' text (health, status...) without rebuilding, so a drag in progress isn't disturbed.
+	# Refresh the cards' text (status, history...) without rebuilding, so nothing in motion is disturbed.
 	refresh_left -= delta
 	if refresh_left <= 0.0:
 		refresh_left = REFRESH_TIME
-		for grid in [card_grid, worker_grid]:
-			for card in grid.get_children():
-				card.refresh()
-		if detail_card != null:
-			detail_card.refresh()
-
-
-## Clears and remakes the slots and cards for the current view.
-func _rebuild() -> void:
-	for container in [slot_row, card_grid, worker_grid]:
-		for child in container.get_children():
-			child.queue_free()
-	var troops: Array = get_tree().get_nodes_in_group("units")
-
-	if view_flight == 0:
-		header.text = "  Troops: drag a fighter onto a flight, or tap a flight to open it"
-		back_button.visible = false
-		for n in range(1, MAX_FLIGHTS + 1):
-			var members := troops.filter(func(unit): return unit.flight == n).size()
-			slot_row.add_child(Slot.new(self, "flight", n, "Flight %d\n%d troops" % [n, members]))
-		for unit in troops:
-			if unit.can_dig:
-				worker_grid.add_child(Card.new(self, unit, false, unit == highlighted))
-			elif unit.flight == 0:
-				card_grid.add_child(Card.new(self, unit, true, unit == highlighted))
-		workers_title.visible = true
-	else:
-		header.text = "  Flight %d: drag a card onto an element" % view_flight
-		back_button.visible = true
-		var members := troops.filter(func(unit): return unit.flight == view_flight)
-		members.sort_custom(func(a, b): return a.element < b.element)
-		for n in range(1, ELEMENTS_PER_FLIGHT + 1):
-			var count := members.filter(func(unit): return unit.element == n).size()
-			slot_row.add_child(Slot.new(self, "element", n, "Element %d\n%d troops" % [n, count]))
-		slot_row.add_child(Slot.new(self, "remove", 0, "Remove from\nflight"))
-		for unit in members:
-			card_grid.add_child(Card.new(self, unit, true, unit == highlighted))
-		workers_title.visible = false
-
-
-## A card was dropped on a slot.
-func card_dropped(kind: String, number: int, unit: Node2D) -> void:
-	match kind:
-		"flight":
-			unit.set_flight(number, 1)
-		"element":
-			unit.set_flight(view_flight, number)
-		"remove":
-			unit.set_flight(0, 1)
-	_rebuild()
-
-
-## One troop's card. Inner classes like this live inside another script; this one is only used here.
-## Small in the lists; large (with history) when tapped.
-class Card extends PanelContainer:
-	const SMALL_SIZE := Vector2(200, 290)  # about a playing card's 5:7
-	const LARGE_SIZE := Vector2(340, 560)
-	const TAP_DISTANCE := 12.0  # a press that moves less than this before release is a tap, not a drag
-
-	var roster: Node
-	var unit: Node2D
-	var draggable: bool
-	var large: bool
-	var press_at := Vector2.INF  # where a press started, to tell taps from drags
-	var frame: StyleBoxFlat
-	var name_label: Label
-	var type_label: Label
-	var stats_label: Label
-	var status_label: Label
-	var fame_bar: ProgressBar
-	var fame_label: Label
-	var history_label: Label
-
-	func _init(owner_roster: Node, for_unit: Node2D, can_drag: bool, highlight: bool, is_large := false) -> void:
-		roster = owner_roster
-		unit = for_unit
-		draggable = can_drag
-		large = is_large
-		custom_minimum_size = LARGE_SIZE if large else SMALL_SIZE
-		if highlight:
-			modulate = Color(1.0, 1.0, 0.6)  # tinted yellow
-		frame = StyleBoxFlat.new()
-		frame.bg_color = Color(0.16, 0.13, 0.11)
-		frame.set_border_width_all(3)
-		frame.set_corner_radius_all(10)
-		frame.set_content_margin_all(8)
-		add_theme_stylebox_override("panel", frame)
-
-		var column := VBoxContainer.new()
-		column.mouse_filter = Control.MOUSE_FILTER_IGNORE  # taps and drags go to the card itself
-		add_child(column)
-		name_label = _label(column, 22 if large else 16)
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		var picture := ColorRect.new()  # a placeholder until there's art
-		picture.color = unit.color
-		picture.custom_minimum_size = Vector2(0, 200 if large else 110)
-		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		column.add_child(picture)
-		type_label = _label(column, 15 if large else 12)
-		type_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		stats_label = _label(column, 15 if large else 12)
-		status_label = _label(column, 15 if large else 12)
-		fame_bar = ProgressBar.new()
-		fame_bar.show_percentage = false
-		fame_bar.custom_minimum_size = Vector2(0, 8)
-		fame_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		column.add_child(fame_bar)
-		fame_label = _label(column, 12)
-		if large:
-			history_label = _label(column, 15)
-		refresh()
-
-	func _label(column: VBoxContainer, font_size: int) -> Label:
-		var label := Label.new()
-		label.add_theme_font_size_override("font_size", font_size)
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		column.add_child(label)
-		return label
-
-	func refresh() -> void:
-		if not is_instance_valid(unit):
-			name_label.text = "(gone)"
-			return
-		# Named troops get a gold frame; the rest take their troop color.
-		frame.border_color = Color(0.92, 0.76, 0.30) if unit.is_named else unit.color.darkened(0.3)
-		name_label.text = unit.roster_label
-		type_label.text = "%s  ·  %s" % [unit.type_id.capitalize(), unit.size.capitalize()]
-		stats_label.text = "HP %d/%d   DMG %d\nRange %d   %.1fs per hit" % [int(unit.health),
-			int(unit.max_health), int(unit.damage), int(unit.attack_range), unit.attack_interval]
-		var assignment := "Flight %d · Element %d" % [unit.flight, unit.element] if unit.flight > 0 \
-			else ("Worker" if unit.can_dig else "No flight")
-		status_label.text = "%s\n%s" % [unit.status_text(), assignment]
-		if unit.is_named:
-			fame_bar.max_value = 1.0
-			fame_bar.value = 1.0
-			fame_label.text = "Fame %d · Named" % int(unit.fame)
-		else:
-			fame_bar.max_value = unit.dungeon.name_threshold()
-			fame_bar.value = unit.fame
-			fame_label.text = "Fame %d / %d" % [int(unit.fame), int(unit.dungeon.name_threshold())]
-		if large:
-			var h: Dictionary = unit.history
-			history_label.text = ("History\nRaids survived: %d\nRaiders downed: %d\n" \
-				+ "Injured: %d times, recovered %d\nRescues: %d\nCells dug: %d   Built: %d   Hauled: %d\n" \
-				+ "Traits: -") % [h["raids_survived"], h["raiders_downed"], h["times_injured"],
-				h["injuries_survived"], h["rescues"], h["cells_dug"], h["builds"], h["hauls"]]
-
-	# A tap (press and release without moving far) opens the large card. A drag is handled below.
-	func _gui_input(event: InputEvent) -> void:
-		if large or not (event is InputEventMouseButton) or event.button_index != MOUSE_BUTTON_LEFT:
-			return
-		if event.pressed:
-			press_at = event.position
-		elif press_at != Vector2.INF and event.position.distance_to(press_at) < TAP_DISTANCE:
-			press_at = Vector2.INF
-			if is_instance_valid(unit):
-				roster.show_detail(unit)
-
-	# Godot's drag and drop: returning data here starts a drag; a Slot underneath can accept it.
-	func _get_drag_data(_at_position: Vector2) -> Variant:
-		press_at = Vector2.INF  # it's a drag, so the release isn't a tap
-		if not draggable or not is_instance_valid(unit):
-			return null
-		var preview := Label.new()
-		preview.text = unit.roster_label
-		set_drag_preview(preview)
-		return {"unit": unit}
-
-
-## A drop target: a flight (main view), an element (flight view), or "remove from flight".
-class Slot extends PanelContainer:
-	var roster: Node
-	var kind: String
-	var number: int
-
-	func _init(owner_roster: Node, slot_kind: String, slot_number: int, caption: String) -> void:
-		roster = owner_roster
-		kind = slot_kind
-		number = slot_number
-		custom_minimum_size = Vector2(150, 64)
-		var label := Label.new()
-		label.text = caption
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		add_child(label)
-
-	func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
-		return data is Dictionary and data.has("unit") and is_instance_valid(data["unit"]) \
-			and not data["unit"].can_dig  # workers can't join flights
-
-	func _drop_data(_at_position: Vector2, data: Variant) -> void:
-		roster.card_dropped(kind, number, data["unit"])
-
-	func _gui_input(event: InputEvent) -> void:
-		# Tapping a flight slot opens that flight's deck.
-		if kind == "flight" and event is InputEventMouseButton and event.pressed \
-				and event.button_index == MOUSE_BUTTON_LEFT:
-			roster.open_flight(number)
+		if center_card != null and not animating:
+			center_card.refresh()
+		for pile in [left_pile, right_pile]:
+			for card in pile.get_children():
+				if card.has_method("refresh"):
+					card.refresh()

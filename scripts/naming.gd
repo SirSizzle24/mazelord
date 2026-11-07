@@ -49,7 +49,7 @@ func _ask_next() -> void:
 			break
 	visible = current != null
 	if current != null:
-		prompt.text = "%s has earned a name!" % current.roster_label
+		prompt.text = "A %s has earned a name!" % current.roster_label
 		name_box.text = dungeon.suggest_name()
 		name_box.grab_focus()
 
@@ -62,7 +62,7 @@ func _confirm() -> void:
 		chosen = dungeon.suggest_name()
 	var old_label: String = current.roster_label
 	current.give_name(chosen)
-	announcement.text = "%s is now known as %s." % [old_label, chosen]
+	announcement.text = "A %s is now known as %s." % [old_label, chosen]
 	announcement.visible = true
 	announce_left = ANNOUNCE_TIME
 	roster.open_for(current)

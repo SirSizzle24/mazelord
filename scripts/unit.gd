@@ -31,7 +31,7 @@ var color := Color(0.6, 0.6, 0.6)
 var can_dig := false  # workers only: digging and building
 var radius := 20.0  # set from the troop type; everyone but workers is bigger
 var size := "small"  # size class (see grid.SIZES): which tunnels it fits through
-var roster_label := ""  # e.g. "Worker 1"; troops are unnamed until they earn fame
+var roster_label := ""  # the troop type ("Worker") until it earns a name, then its name
 var flight := 0  # which flight it's in: 1 to 5, or 0 for none
 var element := 1  # which element of its flight: 1 to 4
 

@@ -11,7 +11,7 @@
 [ext_resource type="Script" path="res://scripts/rooms.gd" id="9_rooms"]
 [ext_resource type="Script" path="res://scripts/fog.gd" id="10_fog"]
 [ext_resource type="Script" path="res://scripts/job_dispatcher.gd" id="11_jobs"]
-[ext_resource type="Script" path="res://scripts/roster.gd" id="12_roster"]
+[ext_resource type="PackedScene" path="res://Scenes/roster.tscn" id="12_roster"]
 [ext_resource type="PackedScene" path="res://Scenes/raider.tscn" id="13_raiderscene"]
 [ext_resource type="Script" path="res://scripts/raids.gd" id="14_raids"]
 [ext_resource type="Script" path="res://scripts/naming.gd" id="15_naming"]
@@ -260,12 +260,11 @@ offset_bottom = 483.0
 toggle_mode = true
 text = "Roster"
 
-[node name="RosterPanel" type="PanelContainer" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button")]
+[node name="RosterPanel" parent="UI" node_paths=PackedStringArray("dungeon", "roster_button") instance=ExtResource("12_roster")]
 offset_left = 140.0
 offset_top = 60.0
 offset_right = 1240.0
 offset_bottom = 700.0
-script = ExtResource("12_roster")
 dungeon = NodePath("../../Dungeon")
 roster_button = NodePath("../RosterButton")
 

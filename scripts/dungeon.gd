@@ -95,7 +95,6 @@ var mana := 100
 var food := 20
 var treasure := 0  # sellable finds, waiting for the merchant
 var workers_sheltered := false  # the alarm: workers stay in quarters and do no work
-var summoned_counts: Dictionary = {}  # type id -> how many have been summoned, for roster labels
 var morale := BASE_MORALE
 var farm_timer := 0.0
 var mana_timer := 0.0
@@ -265,8 +264,7 @@ func summon(type_id: String) -> bool:
 	unit.dungeon = self
 	unit.setup(type_id, troop_type)
 	# Troops are unnamed until they earn fame, so the roster calls them "Worker 1", "Roundhead 2"...
-	summoned_counts[type_id] = summoned_counts.get(type_id, 0) + 1
-	unit.roster_label = "%s %d" % [troop_type["name"], summoned_counts[type_id]]
+	unit.roster_label = troop_type["name"]  # just the type until it earns a name; duplicates are fine
 	units_parent.add_child(unit)  # the unit's _ready runs here
 	troop_summoned.emit(unit)
 	return true

@@ -1,0 +1,145 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/card.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://Assets/UI/card_frame.png" id="2_frame"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_shadow"]
+bg_color = Color(0, 0, 0, 0.45)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_well"]
+bg_color = Color(0.12, 0.10, 0.09, 1)
+
+[node name="Card" type="Control"]
+custom_minimum_size = Vector2(340, 485)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 340.0
+offset_bottom = 485.0
+script = ExtResource("1_card")
+
+[node name="Shadow" type="Panel" parent="."]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 6.0
+offset_top = 12.0
+offset_right = 6.0
+offset_bottom = 12.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_shadow")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.069
+anchor_top = 0.094
+anchor_right = 0.929
+anchor_bottom = 0.92
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_well")
+
+[node name="Portrait" type="ColorRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchor_left = 0.069
+anchor_top = 0.094
+anchor_right = 0.929
+anchor_bottom = 0.601
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 1)
+
+[node name="Frame" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+texture = ExtResource("2_frame")
+expand_mode = 1
+
+[node name="NameLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchor_left = 0.06
+anchor_top = 0.027
+anchor_right = 0.94
+anchor_bottom = 0.0915
+theme_override_colors/font_color = Color(0.93, 0.88, 0.78, 1)
+theme_override_font_sizes/font_size = 20
+text = "Name"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Info" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.069
+anchor_top = 0.601
+anchor_right = 0.929
+anchor_bottom = 0.92
+offset_left = 8.0
+offset_top = 6.0
+offset_right = -8.0
+offset_bottom = -4.0
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="TypeLabel" type="Label" parent="Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "Type · Size"
+horizontal_alignment = 1
+
+[node name="StatusLabel" type="Label" parent="Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Status"
+
+[node name="ElementRow" type="HBoxContainer" parent="Info"]
+layout_mode = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="PrevButton" type="Button" parent="Info/ElementRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "<"
+
+[node name="ElementLabel" type="Label" parent="Info/ElementRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "Element 1"
+
+[node name="NextButton" type="Button" parent="Info/ElementRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = ">"
+
+[node name="FameBar" type="ProgressBar" parent="Info"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+mouse_filter = 2
+show_percentage = false
+
+[node name="FameLabel" type="Label" parent="Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Fame"
+
+[node name="HistoryLabel" type="Label" parent="Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "History"
