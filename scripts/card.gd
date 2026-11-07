@@ -87,15 +87,15 @@ func refresh() -> void:
 	history_label.text = _history_text()
 
 
-## Only the history that fits the troop's job: fighters fight raids, workers dig, build, haul and
-## rescue. Both can be injured. The large card adds the details; the pile cards show the highlights.
+## Only the history that fits the troop's job: fighters fight raids and get injured, workers dig,
+## build, haul and rescue. The large card adds the details; the pile cards show the highlights.
 func _history_text() -> String:
 	var h: Dictionary = unit.history
 	# Cinzel is all capitals and wide, so lines are kept short enough for the parchment.
 	if unit.can_dig:
 		if large:
-			return "Dug %d · Built %d · Hauled %d\nRescues %d\nInjured %d · Recovered %d" % [h["cells_dug"],
-				h["builds"], h["hauls"], h["rescues"], h["times_injured"], h["injuries_survived"]]
+			return "Dug %d · Built %d · Hauled %d\nRescues %d" % [h["cells_dug"], h["builds"], h["hauls"],
+				h["rescues"]]
 		return "Dug %d · Built %d · Hauled %d" % [h["cells_dug"], h["builds"], h["hauls"]]
 	if large:
 		return "Raids survived %d · Downed %d\nInjured %d · Recovered %d" % [h["raids_survived"],
