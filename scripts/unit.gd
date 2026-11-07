@@ -195,8 +195,6 @@ func status_text() -> String:
 		return "In quarters"
 	if not job.is_empty():
 		return {"dig": "Digging", "build": "Building", "haul": "Hauling", "rescue": "Rescuing"}[job["kind"]]
-	if flight > 0:
-		return "Flight %d, element %d" % [flight, element]
 	return "Moving" if not path.is_empty() else "Idle"
 
 

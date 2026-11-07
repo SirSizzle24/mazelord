@@ -17,6 +17,10 @@ const DRAG_DISTANCE := 50.0  # pixels upward to start dragging onto a deck spot
 const LIFT_SCALE := 1.06
 const TILT := 0.0006  # radians of tilt per pixel of sideways swipe
 enum Tier { BRONZE, GOLD, HERO }  # unnamed, named, hero
+const HERO_GLOW := Color(1.0, 0.82, 0.45)  # the hero name's glow; match glow_color on the frame
+const HERO_GLOW_SIZE := 10  # pixels of glow around the hero name's letters
+const BREATH_SECONDS := 3.5  # match breath_seconds and breath_depth on the frame, so they pulse together
+const BREATH_DEPTH := 0.8
 const NAME_COLORS := [Color(0.80, 0.62, 0.48), Color(0.95, 0.78, 0.35), Color(1.0, 0.90, 0.60)]
 
 var roster: Node  # set before the card enters the scene
@@ -132,11 +136,24 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if is_instance_valid(unit) and tier_for() == Tier.HERO:
+		_glow_name()
 	if not pressing or lifted:
 		return
 	held += delta
 	if held >= HOLD_TIME and get_global_mouse_position().distance_to(press_at) < MOVE_SLOP:
 		_set_lifted(true)
+
+
+## A hero's name glows like its frame: a soft outline of light around the letters, breathing on the
+## same clock as the frame's shader (both count seconds since the game started).
+func _glow_name() -> void:
+	var seconds := Time.get_ticks_msec() / 1000.0
+	var breath := 1.0 - BREATH_DEPTH * (0.5 + 0.5 * cos(seconds * TAU / BREATH_SECONDS))
+	var glow := HERO_GLOW
+	glow.a = 0.75 * breath
+	name_label.add_theme_color_override("font_outline_color", glow)
+	name_label.add_theme_constant_override("outline_size", HERO_GLOW_SIZE)
 
 
 ## Slides back to rest after a swipe that didn't go far enough.
