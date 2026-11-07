@@ -50,8 +50,9 @@ func _ready() -> void:
 
 
 ## The stack, built flat in an offscreen viewport: a soft shadow, then the cards. The bottom card stays
-## put and each card above sits a little higher and further left, so the stack grows upward as the deck
-## fills. Cards lower in the stack are in the top card's shadow.
+## put and each card above sits a little higher, straight up the slab: seen from the near side of the
+## table, a taller stack reaches further up the screen. Cards lower in the stack are in the top card's
+## shadow.
 func _build_stack() -> void:
 	var viewport := SubViewport.new()
 	viewport.transparent_bg = true
@@ -60,7 +61,7 @@ func _build_stack() -> void:
 	add_child(viewport)
 	var shown: int = min(STACK_DEPTH, cards.size())
 	var card_size: Vector2 = Vector2.ZERO
-	var spread := Vector2.ONE * STACK_OFFSET * (STACK_DEPTH - 1)
+	var spread := Vector2(0.0, STACK_OFFSET * (STACK_DEPTH - 1))
 	var shadow := Panel.new()
 	var look := StyleBoxFlat.new()
 	look.bg_color = Color(0.0, 0.0, 0.0, 0.5)
@@ -72,11 +73,11 @@ func _build_stack() -> void:
 		card_size = card.custom_minimum_size * CARD_SCALE
 		card.scale = Vector2.ONE * CARD_SCALE
 		var from_bottom: int = shown - 1 - i
-		card.position = spread - Vector2.ONE * STACK_OFFSET * from_bottom
+		card.position = spread - Vector2(0.0, STACK_OFFSET * from_bottom)
 		card.modulate = Color.WHITE if i == 0 else Color(0.6, 0.6, 0.6)
-	shadow.position = spread + Vector2(3, 4)
+	shadow.position = spread + Vector2(0, 4)
 	shadow.size = card_size
-	flat_size = card_size + spread + Vector2(3, 4)
+	flat_size = card_size + spread + Vector2(0, 4)
 	viewport.size = Vector2i(ceili(flat_size.x), ceili(flat_size.y))
 	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE  # it never moves; draw it once
 

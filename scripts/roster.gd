@@ -17,15 +17,19 @@ extends PanelContainer
 
 const CardScene := preload("res://Scenes/card.tscn")
 const DeckSpotScene := preload("res://Scenes/deck_spot.tscn")
-## Each tray's slab corners, measured from the painting, as fractions of the tray's rect: top-left,
-## top-right, bottom-right, bottom-left (x, y each). The cards lying on it are drawn in this perspective.
+## Each tray's slab corners, as fractions of the tray's rect: top-left, top-right, bottom-right,
+## bottom-left (x, y each). The cards lying on it are drawn in this perspective. The camera sits over the
+## middle of the table, so the slabs fan out: the middle ones point straight at you, the outer ones lean
+## outward, and every slab is a touch wider at the near (bottom) end. Each slab's lean was measured from
+## its right edge in the painting (the left edges are blurred by the trays' shadows, which is what made
+## every stack lean left before); the left edge is given the same lean.
 const TRAY_SLABS := [
-	[0.153, 0.260, 0.820, 0.260, 0.711, 0.860, 0.010, 0.860],
-	[0.146, 0.260, 0.854, 0.260, 0.813, 0.860, 0.048, 0.860],
-	[0.147, 0.260, 0.847, 0.260, 0.838, 0.860, 0.102, 0.860],
-	[0.143, 0.260, 0.845, 0.260, 0.882, 0.860, 0.145, 0.860],
-	[0.144, 0.260, 0.844, 0.260, 0.931, 0.860, 0.178, 0.860],
-	[0.155, 0.260, 0.852, 0.260, 1.004, 0.860, 0.259, 0.860],
+	[0.145, 0.2, 0.825, 0.2, 0.751, 0.8, -0.01, 0.8],
+	[0.155, 0.2, 0.845, 0.2, 0.809, 0.8, 0.049, 0.8],
+	[0.155, 0.2, 0.845, 0.2, 0.855, 0.8, 0.1, 0.8],
+	[0.155, 0.2, 0.845, 0.2, 0.897, 0.8, 0.145, 0.8],
+	[0.155, 0.2, 0.845, 0.2, 0.927, 0.8, 0.207, 0.8],
+	[0.155, 0.2, 0.845, 0.2, 1.002, 0.8, 0.252, 0.8],
 ]
 ## Each tray's shape, cut from the table picture, for its glow (in DECK_ORDER).
 const TRAY_MASKS := [preload("res://Assets/UI/Trays/tray_1.png"), preload("res://Assets/UI/Trays/tray_2.png"),

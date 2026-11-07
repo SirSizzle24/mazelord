@@ -123,10 +123,10 @@ expand_mode = 1
 unique_name_in_owner = true
 material = SubResource("CanvasItemMaterial_add")
 layout_mode = 1
-anchor_left = 0.75
-anchor_top = 0.33
-anchor_right = 1.075
-anchor_bottom = 1.03
+anchor_left = 0.705
+anchor_top = 0.34
+anchor_right = 1.03
+anchor_bottom = 1.04
 mouse_filter = 2
 texture = SubResource("GradientTexture2D_candle")
 expand_mode = 1
@@ -145,18 +145,18 @@ expand_mode = 1
 [node name="CandleFlame" type="ColorRect" parent="Table/TableArt"]
 material = SubResource("ShaderMaterial_flame")
 layout_mode = 1
-anchor_left = 0.9
+anchor_left = 0.855
 anchor_top = 0.585
-anchor_right = 0.925
+anchor_right = 0.88
 anchor_bottom = 0.705
 mouse_filter = 2
 
 [node name="CoinGlow" type="TextureRect" parent="Table/TableArt"]
 material = SubResource("CanvasItemMaterial_add")
 layout_mode = 1
-anchor_left = -0.04
+anchor_left = 0.02
 anchor_top = 0.76
-anchor_right = 0.14
+anchor_right = 0.21
 anchor_bottom = 1.08
 mouse_filter = 2
 texture = SubResource("GradientTexture2D_gold")
@@ -165,8 +165,9 @@ expand_mode = 1
 [node name="CoinGlitter" type="ColorRect" parent="Table/TableArt"]
 material = SubResource("ShaderMaterial_glitter")
 layout_mode = 1
-anchor_top = 0.82
-anchor_right = 0.11
+anchor_left = 0.0516
+anchor_top = 0.8201
+anchor_right = 0.1806
 anchor_bottom = 1.0
 mouse_filter = 2
 
