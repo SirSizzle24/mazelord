@@ -1,17 +1,27 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/deck_spot.gd" id="1_spot"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glow"]
+content_margin_bottom = 18.0
+bg_color = Color(1, 0.8, 0.45, 0)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
 [node name="DeckSpot" type="PanelContainer"]
-custom_minimum_size = Vector2(160, 72)
-offset_right = 160.0
-offset_bottom = 72.0
+offset_right = 134.0
+offset_bottom = 182.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_glow")
 script = ExtResource("1_spot")
 
 [node name="Caption" type="Label" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_colors/font_color = Color(0.1, 0.1, 0.11, 1)
+theme_override_font_sizes/font_size = 13
 text = "Flight 1
 0 troops"
 horizontal_alignment = 1
-vertical_alignment = 1
+vertical_alignment = 2

@@ -8,16 +8,27 @@ extends PanelContainer
 ## Long-press a troop on the map to open the roster at its card.
 ##
 ## The roster takes the whole screen: a stone war table in candlelight, with the decks' trays along the
-## far edge. The game keeps running behind it, so the top bar shows the raid clock.
+## far edge. The game keeps running behind it, so the bottom bar shows the raid clock.
 ## The screen's layout lives in Scenes/roster.tscn and each card's in Scenes/card.tscn, so both can be
 ## restyled in the editor. The code finds the parts by their unique names (%DeckSpots and so on).
-## The table is placeholder art (the wall texture, a candle glow and a vignette): replace the Table
-## node's children with your painting.
+## The table is your render (Assets/UI/roster_table.png), kept at its own shape and cropped to fill the
+## screen. Its lighting is added here: a warm pool in the middle, the candle's glow (which flickers), the
+## lantern's red glow, and a vignette, all as see-through layers over the picture.
 
 const CardScene := preload("res://Scenes/card.tscn")
 const DeckSpotScene := preload("res://Scenes/deck_spot.tscn")
 const ELEMENTS_PER_FLIGHT := 4
 const DECK_ORDER := [1, 2, 3, 4, 5, 0]  # the spots, left to right: flights, then flightless
+## Where each tray is in the table painting (roster_table.png), as fractions of the picture's width and
+## height, in DECK_ORDER. The spots sit on these, so they follow the picture however it's cropped.
+const TRAY_RECTS := [
+	Rect2(0.181, 0.0, 0.100, 0.276),
+	Rect2(0.2885, 0.0, 0.094, 0.276),
+	Rect2(0.392, 0.0, 0.0955, 0.276),
+	Rect2(0.496, 0.0, 0.095, 0.276),
+	Rect2(0.599, 0.0, 0.096, 0.276),
+	Rect2(0.702, 0.0, 0.0965, 0.276),
+]
 const REFRESH_TIME := 0.5  # seconds between updates of the cards' text while open
 const PILE_SCALE := 0.62  # pile cards are the middle card shrunk
 const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and right
@@ -125,14 +136,25 @@ func _rebuild(keep: Node2D = null) -> void:
 func _rebuild_spots() -> void:
 	for child in deck_spots.get_children():
 		child.queue_free()
-	for n in DECK_ORDER:
+	for i in DECK_ORDER.size():
+		var n: int = DECK_ORDER[i]
 		var spot := DeckSpotScene.instantiate()
 		spot.roster = self
 		spot.number = n
 		if n != current_deck:  # the open deck's spot stays empty
 			var deck_name := "Flight %d" % n if n > 0 else "Flightless"
 			spot.caption = "%s\n%d troops" % [deck_name, _collect(n).size()]
+		# Pinned to its tray in the picture: anchors are fractions of the picture's size.
+		var tray: Rect2 = TRAY_RECTS[i]
+		spot.anchor_left = tray.position.x
+		spot.anchor_top = tray.position.y
+		spot.anchor_right = tray.end.x
+		spot.anchor_bottom = tray.end.y
 		deck_spots.add_child(spot)
+		spot.offset_left = 0.0
+		spot.offset_top = 0.0
+		spot.offset_right = 0.0
+		spot.offset_bottom = 0.0
 
 
 func _spot_for(number: int) -> Control:

@@ -1,29 +1,28 @@
 extends PanelContainer
-## A deck's tray, recessed into the far edge of the war table: tap it to open that deck, or drop the
-## middle card on it to move the troop there. Laid out in Scenes/deck_spot.tscn; restyle it freely, keeping the %Caption name.
-## While a card is being dragged, every spot that can take it glows, and the one under your finger grows.
-## The open deck's tray is empty (its cards are out on the table), with nothing to tap or drop on.
+## A deck's tray on the war table. The tray itself is in the table painting; this is the see-through
+## area over it, placed by the roster: tap it to open that deck, or drop the middle card on it to move
+## the troop there. Laid out in Scenes/deck_spot.tscn; restyle it freely, keeping the %Caption name.
+## While a card is being dragged, every tray that can take it glows warm, and the one under your finger
+## glows brighter and grows. The open deck's tray shows no caption: its cards are out on the table.
 
-const HOVER_SCALE := 1.1
-const GLOW := Color(1.3, 1.2, 0.85)  # tint while a drag is in progress
+const HOVER_SCALE := 1.08
+const GLOW_ALPHA := 0.16  # how strongly a tray glows while a card is in the air
+const HOVER_GLOW_ALPHA := 0.32  # and the one under your finger
 
 var roster: Node  # set before the spot enters the scene
 var number := 0  # 1 to 5 for a flight, 0 for flightless
 var caption := ""  # empty for the open deck's spot
 var hovering := false
+var dragging := false
+var glow: StyleBoxFlat
 
 @onready var caption_label: Label = %Caption
 
 
 func _ready() -> void:
-	pivot_offset = custom_minimum_size / 2.0  # grow from the middle
-	var tray := StyleBoxFlat.new()  # placeholder: a dark recess with a faint lit lip at the bottom
-	tray.bg_color = Color(0.05, 0.04, 0.035, 0.85)
-	tray.border_width_bottom = 2
-	tray.border_color = Color(0.85, 0.65, 0.4, 0.35)
-	tray.set_corner_radius_all(6)
-	tray.set_content_margin_all(6)
-	add_theme_stylebox_override("panel", tray)
+	glow = get_theme_stylebox("panel").duplicate()  # its own copy, so each tray glows on its own
+	add_theme_stylebox_override("panel", glow)
+	resized.connect(func(): pivot_offset = size / 2.0)  # grow from the middle
 	if caption == "":
 		caption_label.visible = false  # the open deck's tray: its cards are out on the table
 	else:
@@ -58,11 +57,20 @@ func _notification(what: int) -> void:
 		return
 	if what == NOTIFICATION_DRAG_BEGIN:
 		var data: Variant = get_viewport().gui_get_drag_data()
-		if data is Dictionary and data.has("unit"):
-			modulate = GLOW
+		if data is Dictionary and data.has("unit") and not data["unit"].can_dig:
+			dragging = true
+			_update_glow()
 	elif what == NOTIFICATION_DRAG_END:
-		modulate = Color.WHITE
+		dragging = false
 		_set_hover(false)
+		_update_glow()
+
+
+func _update_glow() -> void:
+	var alpha := 0.0
+	if dragging:
+		alpha = HOVER_GLOW_ALPHA if hovering else GLOW_ALPHA
+	create_tween().tween_property(glow, "bg_color:a", alpha, 0.1)
 
 
 func _set_hover(on: bool) -> void:
@@ -70,6 +78,7 @@ func _set_hover(on: bool) -> void:
 		return
 	hovering = on
 	create_tween().tween_property(self, "scale", Vector2.ONE * (HOVER_SCALE if on else 1.0), 0.08)
+	_update_glow()
 
 
 ## A short bump, when a card lands here.
