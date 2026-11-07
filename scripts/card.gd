@@ -84,16 +84,22 @@ func refresh() -> void:
 		fame_bar.max_value = unit.dungeon.name_threshold()
 		fame_bar.value = unit.fame
 		fame_label.text = "Fame %d / %d" % [int(unit.fame), int(unit.dungeon.name_threshold())]
+	history_label.text = _history_text()
+
+
+## Only the history that fits the troop's job: fighters fight raids, workers dig, build, haul and
+## rescue. Both can be injured. The large card adds the details; the pile cards show the highlights.
+func _history_text() -> String:
 	var h: Dictionary = unit.history
+	if unit.can_dig:
+		if large:
+			return "Dug %d · Built %d · Hauled %d\nRescues %d · Injured %d, recovered %d" % [h["cells_dug"],
+				h["builds"], h["hauls"], h["rescues"], h["times_injured"], h["injuries_survived"]]
+		return "Dug %d · Built %d · Hauled %d" % [h["cells_dug"], h["builds"], h["hauls"]]
 	if large:
-		history_label.text = ("Raids survived %d · Raiders downed %d\nInjured %d, recovered %d · Rescues %d\n" \
-			+ "Dug %d · Built %d · Hauled %d") % [h["raids_survived"], h["raiders_downed"],
-			h["times_injured"], h["injuries_survived"], h["rescues"], h["cells_dug"], h["builds"], h["hauls"]]
-	else:
-		# The highlights: what a fighter or a worker is known for.
-		history_label.text = "Raids %d · Downed %d · Injured %d" % [h["raids_survived"],
-			h["raiders_downed"], h["times_injured"]] if not unit.can_dig \
-			else "Dug %d · Built %d · Hauled %d" % [h["cells_dug"], h["builds"], h["hauls"]]
+		return "Raids survived %d · Raiders downed %d\nInjured %d, recovered %d" % [h["raids_survived"],
+			h["raiders_downed"], h["times_injured"], h["injuries_survived"]]
+	return "Raids %d · Downed %d · Injured %d" % [h["raids_survived"], h["raiders_downed"], h["times_injured"]]
 
 
 ## The troop's rank, for the frame: hero, else named, else unnamed.
