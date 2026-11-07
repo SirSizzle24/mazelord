@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://Assets/UI/card_frame.png" id="2_frame"]
 [ext_resource type="Shader" path="res://scripts/card_frame.gdshader" id="3_tier"]
 [ext_resource type="Texture2D" path="res://Assets/UI/card_textbox.png" id="4_textbox"]
-[ext_resource type="FontFile" path="res://Assets/Fonts/Cinzel-VariableFont_wght.ttf" id="5_cinzel"]
+[ext_resource type="FontVariation" path="res://Assets/Fonts/cinzel_bold.tres" id="5_cinzel"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_tier"]
 resource_local_to_scene = true
@@ -118,9 +118,6 @@ anchor_right = 0.914
 anchor_bottom = 0.162
 theme_override_colors/font_color = Color(0.07, 0.07, 0.08, 1)
 theme_override_fonts/font = ExtResource("5_cinzel")
-theme_override_colors/font_shadow_color = Color(1, 0.97, 0.9, 0.45)
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 12
 text = "Type · Size"
 horizontal_alignment = 1
@@ -141,9 +138,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.07, 0.07, 0.08, 1)
 theme_override_fonts/font = ExtResource("5_cinzel")
-theme_override_colors/font_shadow_color = Color(1, 0.97, 0.9, 0.45)
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 12
 text = "Status"
 horizontal_alignment = 1
@@ -165,9 +159,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.07, 0.07, 0.08, 1)
 theme_override_fonts/font = ExtResource("5_cinzel")
-theme_override_colors/font_shadow_color = Color(1, 0.97, 0.9, 0.45)
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 12
 text = "Element 1"
 
@@ -183,10 +174,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.07, 0.07, 0.08, 1)
 theme_override_fonts/font = ExtResource("5_cinzel")
-theme_override_colors/font_shadow_color = Color(1, 0.97, 0.9, 0.45)
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 1
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 12
 text = "History"
 horizontal_alignment = 1
 
@@ -204,9 +192,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.07, 0.07, 0.08, 1)
 theme_override_fonts/font = ExtResource("5_cinzel")
-theme_override_colors/font_shadow_color = Color(1, 0.97, 0.9, 0.45)
-theme_override_constants/shadow_offset_x = 0
-theme_override_constants/shadow_offset_y = 1
 theme_override_font_sizes/font_size = 10
 text = "Fame"
 vertical_alignment = 1
