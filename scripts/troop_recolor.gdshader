@@ -21,6 +21,11 @@ uniform float glow_phase = 0.0;  // so glowing troops don't all pulse together
 uniform float cap_reference = 0.45;
 uniform float body_reference = 0.40;
 uniform float spot_reference = 0.85;
+// The baked render's highlights read as plastic shine next to the matte dungeon. Light above a part's
+// usual brightness keeps only this share (1 = as rendered, 0 = no highlights at all)...
+uniform float shine : hint_range(0.0, 1.0) = 0.35;
+// ...and everything is scaled by this, to sit with the dungeon's darker light.
+uniform float brightness : hint_range(0.0, 1.5) = 0.85;
 
 varying vec4 tint;  // the node's modulate (a downed troop is drawn darker, say)
 
@@ -28,15 +33,20 @@ void vertex() {
 	tint = COLOR;
 }
 
-float brightness(vec3 c) {
+float luma(vec3 c) {
 	return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// Shading against a part's usual brightness (1 = the chosen color exactly), with highlights tamed.
+float tame(float shade) {
+	return (shade <= 1.0 ? shade : 1.0 + (shade - 1.0) * shine) * brightness;
 }
 
 void fragment() {
 	vec4 picture = texture(TEXTURE, UV);
 	float region = texture(mask, UV).r;
 	vec3 rgb = picture.rgb;
-	float light = brightness(picture.rgb);
+	float light = luma(picture.rgb);
 	if (region > 0.75) {
 		// Cap. A spot is pale (little color) and bright.
 		float high = max(max(rgb.r, rgb.g), rgb.b);
@@ -45,13 +55,13 @@ void fragment() {
 		float spot = smoothstep(0.42, 0.22, saturation) * smoothstep(0.4, 0.6, high);
 		// Shade each part against its own usual brightness, so a spot with no style just takes the
 		// cap's color at the cap's shading, and vanishes.
-		float shade = mix(light / cap_reference, light / spot_reference, spot);
+		float shade = tame(mix(light / cap_reference, light / spot_reference, spot));
 		vec3 base = mix(cap_color.rgb, spot_color.rgb, spot * spot_amount);
 		rgb = base * shade;
 		float pulse = 0.65 + 0.35 * sin(TAU * (TIME / glow_seconds + glow_phase));
 		rgb += spot_color.rgb * spot * spot_glow * pulse;
 	} else if (region > 0.25) {
-		rgb = body_color.rgb * (light / body_reference);
+		rgb = body_color.rgb * tame(light / body_reference);
 	}
 	COLOR = vec4(min(rgb, vec3(1.0)), picture.a) * tint;
 }
