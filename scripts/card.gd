@@ -1,8 +1,9 @@
 extends Control
 ## One troop's card. Its layout lives in Scenes/card.tscn: move, restyle or swap its parts in the editor
 ## freely. The code finds them by their unique names (%NameLabel and so on), so the names are the only
-## thing that must stay. The portrait can be a ColorRect (placeholder: it gets the troop's color) or a
-## TextureRect once there's art. The frame is a picture laid over everything but the text, and its
+## thing that must stay. %Portrait is the portrait's backing (a ColorRect in the troop's color, for
+## types with no art yet); %PortraitArt over it plays the baked portrait, recolored with the troop's
+## look. Only the middle card animates it; pile and tray cards hold the first frame. The frame is a picture laid over everything but the text, and its
 ## shader (card_frame.gdshader) shows the troop's rank: bronze unnamed, gold named, glowing gold for a
 ## hero. Its colors are settings on %Frame's material. The name's color follows the rank too.
 ##
@@ -21,6 +22,8 @@ const HERO_GLOW := Color(1.0, 0.82, 0.45)  # the hero name's glow; match glow_co
 const HERO_GLOW_SIZE := 10  # pixels of glow around the hero name's letters
 const BREATH_SECONDS := 3.5  # match breath_seconds and breath_depth on the frame, so they pulse together
 const BREATH_DEPTH := 0.8
+const TroopLook := preload("res://scripts/troop_look.gd")
+const GLANCE_EVERY := Vector2i(2, 4)  # the portrait glances around once every this many idle loops
 const NAME_COLORS := [Color(0.80, 0.62, 0.48), Color(0.95, 0.78, 0.35), Color(1.0, 0.90, 0.60)]
 
 var roster: Node  # set before the card enters the scene
@@ -30,6 +33,10 @@ var rest_position := Vector2.ZERO  # where the middle card sits when nothing is 
 var mini := false  # a tiny card lying in a tray: no text, only the frame, portrait and rank
 var compact := false  # a large card shown like a pile card, while it flies between the middle and a pile
 var tier_override := -1  # debug: show this rank instead of the troop's own (-1 for its own)
+var portrait_info: Dictionary = {}  # the baked portrait's layout, once it's showing
+var portrait_time := 0.0  # seconds into the idle loop
+var glance_time := -1.0  # seconds into the glance, or -1 while idling
+var loops_left := 0  # idle loops before the next glance
 
 var pressing := false
 var press_at := Vector2.ZERO  # global position where the press started
@@ -40,6 +47,7 @@ var lifted := false
 @onready var frame: CanvasItem = %Frame
 @onready var name_label: Label = %NameLabel
 @onready var portrait: Control = %Portrait
+@onready var portrait_art: TextureRect = %PortraitArt
 @onready var type_label: Label = %TypeLabel
 @onready var status_label: Label = %StatusLabel
 @onready var prev_button: Button = %PrevButton
@@ -84,8 +92,10 @@ func refresh() -> void:
 	if frame.material is ShaderMaterial:
 		frame.material.set_shader_parameter("tier", tier)
 	name_label.add_theme_color_override("font_color", NAME_COLORS[tier])
+	if portrait_info.is_empty() and not unit.look.is_empty():
+		_show_portrait()
 	if portrait is ColorRect:
-		portrait.color = unit.color  # placeholder until there's art
+		portrait.color = Color.TRANSPARENT if not portrait_info.is_empty() else unit.color
 	name_label.text = unit.roster_label
 	type_label.text = "%s  ·  %s" % [unit.type_id.capitalize(), unit.size.capitalize()]
 	status_label.text = unit.status_text()
@@ -157,9 +167,65 @@ func _gui_input(event: InputEvent) -> void:
 			rotation = moved.x * TILT
 
 
+## Puts the troop's baked portrait on the card, wearing its look, at the first frame.
+func _show_portrait() -> void:
+	var folder: String = unit.sprite_folder.path_join(unit.look["face"])
+	var sheet := TroopLook.sheet(folder, "portrait", false)  # freed again once no card shows it
+	if sheet.is_empty():
+		return
+	portrait_info = sheet["info"]
+	loops_left = randi_range(GLANCE_EVERY.x, GLANCE_EVERY.y)
+	var atlas := AtlasTexture.new()
+	atlas.atlas = sheet["color"]
+	atlas.filter_clip = true  # no bleeding in from the next frame
+	portrait_art.texture = atlas
+	var material := TroopLook.material_for(unit.look)
+	material.set_shader_parameter("mask", sheet["mask"])
+	portrait_art.material = material
+	_show_portrait_frame(0)
+
+
+## The portrait sheet holds one idle loop, then a glance (the idle from its start while it turns and
+## turns back). It idles for a few loops, glances, then carries on with the idle from where the
+## glance's idle had got to, so it never jumps.
+func _play_portrait(delta: float) -> void:
+	var fps: float = portrait_info["fps"]
+	var idle_frames: int = portrait_info.get("idle_frames", portrait_info["frames"])
+	var glance_frames: int = portrait_info.get("glance_frames", 0)
+	var loop_seconds := idle_frames / fps
+	if glance_time >= 0.0:
+		glance_time += delta
+		var g := int(glance_time * fps)
+		if g < glance_frames:
+			_show_portrait_frame(idle_frames + g)
+			return
+		portrait_time = fmod(glance_time, loop_seconds)  # back to the idle, at the glance's moment
+		glance_time = -1.0
+		loops_left = randi_range(GLANCE_EVERY.x, GLANCE_EVERY.y)
+	else:
+		portrait_time += delta
+	if portrait_time >= loop_seconds:
+		portrait_time -= loop_seconds
+		loops_left -= 1
+		if loops_left <= 0 and glance_frames > 0:
+			glance_time = portrait_time
+			_show_portrait_frame(idle_frames + int(glance_time * fps))
+			return
+	_show_portrait_frame(int(portrait_time * fps) % idle_frames)
+
+
+func _show_portrait_frame(index: int) -> void:
+	var w: float = portrait_info["frame_width"]
+	var h: float = portrait_info["frame_height"]
+	var columns: int = portrait_info["columns"]
+	(portrait_art.texture as AtlasTexture).region = Rect2((index % columns) * w, floorf(index / float(columns)) * h, w, h)
+
+
 func _process(delta: float) -> void:
 	if is_instance_valid(unit) and tier_for() == Tier.HERO:
 		_glow_name()
+	if large and not portrait_info.is_empty():
+		_play_portrait(delta)
 	if not pressing or lifted:
 		return
 	held += delta

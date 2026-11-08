@@ -141,6 +141,9 @@ def pack(raw, out, name, scale, directions, anchor_raw):
     Image.fromarray(mask_sheet, "L").save(os.path.join(out, name + "_mask.png"), optimize=True)
     packed = {"frame_width": fw, "frame_height": fh, "frames": frames, "columns": cols,
               "rows_per_direction": rows_per_dir, "directions": len(dirs), "fps": info["fps"]}
+    for key in ("idle_frames", "glance_frames"):  # the portrait's two parts
+        if key in info:
+            packed[key] = info[key]
     if anchor_raw is not None:
         packed["anchor"] = [round((anchor_raw[0] - x0) * scale, 2), round((anchor_raw[1] - y0) * scale, 2)]
     json.dump(packed, open(os.path.join(out, name + ".json"), "w"))

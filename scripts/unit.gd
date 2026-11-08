@@ -9,7 +9,8 @@ extends "res://scripts/fighter.gd"
 ## tells it when it's free.
 
 const SPEED := 300.0  # pixels per second
-const DIG_TIME := 0.4  # seconds to dig one cell, so a block takes about 3.6 s (build time lives on the grid)
+const DIG_TIME := 4.0  # seconds to dig one cell: two swings of the dig clip (2 s each), so a block takes 36 s
+## (build time lives on the grid)
 const DEATH_TIME := 60.0  # seconds an injured troop survives off mycelium
 const HEAL_TIME := 20.0  # seconds on mycelium for an injured troop to get back up
 const RECOVERED_HEALTH := 0.5  # share of full health it gets back up with
@@ -23,7 +24,7 @@ const RUSH_CLIP := "Run"  # carrying a patient
 const DIG_CLIP := "Attack_L"
 const BUILD_CLIP := "Attack_R"
 const FIGHT_CLIPS := ["Attack_L", "Attack_R"]  # one at random per hit
-const WORK_RATE := 1.6  # digging and building play faster than a fighting swing
+const WORK_RATE := 1.0  # digging and building play at the clips' own speed (DIG_TIME is set to match)
 const SHADOW_RADIUS := 22.0  # the soft shadow under a sprite's feet, before it's squashed flat
 const SHADOW_SQUASH := 0.5  # shadow height against its width: flatter reads as lying on the floor
 const SHADOW_ALPHA := 0.45  # darkness at its middle
@@ -49,6 +50,7 @@ var sprite_folder := ""  # the type's baked art (one folder per face), or "" for
 var look: Dictionary = {}  # cap, body and spot colors and face (troop_look.gd); set when summoned
 var sprite: TroopSprite = null  # the TroopSprite, when this type has art
 var action := ""  # a clip that plays through before anything else ("Enter_1", "Hit"...), or ""
+var animated_job: Dictionary = {}  # the job the work clip was last started for
 var dying := false  # playing its death; already gone from the roster and the count
 var can_dig := false  # workers only: digging and building
 var radius := 20.0  # set from the troop type; everyone but workers is bigger
@@ -134,6 +136,9 @@ func _animate() -> void:
 	elif not job.is_empty() and job["kind"] in ["dig", "build"]:
 		clip = DIG_CLIP if job["kind"] == "dig" else BUILD_CLIP
 		rate = WORK_RATE
+		if job != animated_job:  # a new cell: start the swing from the top, so swings match the dig time
+			animated_job = job
+			sprite.clip = ""
 		sprite.face(grid.tile_to_screen(job["tile"]) - position)
 	elif target != null and is_instance_valid(target):
 		sprite.face(target.position - position)
