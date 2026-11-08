@@ -8,9 +8,11 @@ signal troop_summoned(unit: Node2D)  # the roster listens, to add a row
 signal name_earned(unit: Node2D)  # the naming panel listens, to ask for a name
 
 ## Every troop type that can be summoned. Fungi only for now.
+const TroopLook := preload("res://scripts/troop_look.gd")
 const TROOP_TYPES := {
 	"worker": {"name": "Worker", "cost": 30, "color": Color(0.85, 0.55, 0.60), "can_dig": true,
-		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2, "radius": 20.0, "size": "small"},
+		"health": 30.0, "damage": 3.0, "range": 50.0, "attack_interval": 1.2, "radius": 20.0, "size": "small",
+		"sprites": "res://Assets/Troops/worker", "faces": ["face1"]},  # baked art: one folder per face
 	"roundhead": {"name": "Roundhead", "cost": 20, "color": Color(0.55, 0.40, 0.30), "can_dig": false,
 		"health": 60.0, "damage": 8.0, "range": 82.0, "attack_interval": 1.0, "radius": 30.0, "size": "medium"},
 }
@@ -279,6 +281,8 @@ func summon(type_id: String, free := false) -> bool:
 	unit.dispatcher = dispatcher
 	unit.dungeon = self
 	unit.setup(type_id, troop_type)
+	if troop_type.has("sprites"):
+		unit.look = TroopLook.roll(troop_type["faces"])  # its own cap, body, spots and face
 	# Troops are unnamed until they earn fame, so the roster calls them "Worker 1", "Roundhead 2"...
 	unit.roster_label = troop_type["name"]  # just the type until it earns a name; duplicates are fine
 	units_parent.add_child(unit)  # the unit's _ready runs here

@@ -1,1 +1,1 @@
-{"frame_width": 227, "frame_height": 230, "frames": 60, "columns": 18, "rows_per_direction": 4, "directions": 1, "fps": 10}
+{"frame_width": 226, "frame_height": 230, "frames": 120, "columns": 18, "rows_per_direction": 7, "directions": 1, "fps": 10, "idle_frames": 60, "glance_frames": 60}
