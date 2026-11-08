@@ -53,6 +53,9 @@ const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and ri
 const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
 const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
 const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
+const SLIDE_IN_TIME := 0.4  # seconds for the next card to slide in after one is moved to another deck
+const SWAP_TIME := 0.22  # seconds for each half of switching decks (put the old one down, bring the new up)
+const TRAY_SCALE := 0.25  # a card's size in its tray, against a full card
 const FLICKER := 0.35  # how much the candlelight wavers
 const FLICKER_SPEED := 2.5  # how fast it wavers
 const RAID_WARNING := 30.0  # seconds before a raid when the clock turns red
@@ -117,13 +120,91 @@ func open_for(unit: Node2D) -> void:
 
 
 ## Opens a deck: 1 to 5 for a flight, 0 for flightless. Tapping a deck spot does this.
+## The open deck is put down first: its cards gather and shrink into its tray. Then the chosen deck is
+## brought forward: its cards rise out of its tray to the middle and the piles.
 func open_deck(number: int) -> void:
-	if animating:
+	if animating or number == current_deck:
 		return
+	animating = true
+	var outgoing := _table_cards()
+	if outgoing.is_empty():
+		_bring_forward(number, outgoing)
+		return
+	var tray := _tray_center(current_deck)
+	var put_down := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	for card in outgoing:
+		_move_to(card, fly_layer)
+		put_down.tween_property(card, "global_position", _corner_for_center(card, tray, TRAY_SCALE), SWAP_TIME)
+		put_down.tween_property(card, "scale", Vector2.ONE * TRAY_SCALE, SWAP_TIME)
+		put_down.tween_property(card, "rotation", 0.0, SWAP_TIME)
+		put_down.tween_property(card, "modulate:a", 0.0, SWAP_TIME).set_ease(Tween.EASE_IN_OUT)
+	put_down.chain().tween_callback(_bring_forward.bind(number, outgoing))
+
+
+## Second half of switching decks: the old deck is in its tray, so lay out the new one and fly its cards
+## from their tray to where they belong.
+func _bring_forward(number: int, outgoing: Array) -> void:
+	for card in outgoing:
+		card.queue_free()
 	current_deck = number
 	index = 0
 	deck = []  # forget the old deck, so _rebuild starts at its first card
 	_rebuild()
+	var incoming := _table_cards()
+	if incoming.is_empty():
+		animating = false
+		return
+	var tray := _tray_center(number)
+	var homes: Array = []  # each card's parent, position and scale, to put it back after the flight
+	var bring := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	for card in incoming:
+		homes.append([card.get_parent(), card.position, card.scale])
+		var final_scale: Vector2 = card.scale
+		_move_to(card, fly_layer)
+		var final_at: Vector2 = card.global_position
+		card.scale = Vector2.ONE * TRAY_SCALE
+		card.global_position = _corner_for_center(card, tray, TRAY_SCALE)
+		card.modulate.a = 0.0
+		bring.tween_property(card, "global_position", final_at, SWAP_TIME)
+		bring.tween_property(card, "scale", final_scale, SWAP_TIME)
+		bring.tween_property(card, "modulate:a", 1.0, SWAP_TIME * 0.5)
+	bring.chain().tween_callback(_finish_bring_forward.bind(incoming, homes))
+
+
+func _finish_bring_forward(incoming: Array, homes: Array) -> void:
+	for i in incoming.size():
+		var card: Control = incoming[i]
+		if not is_instance_valid(card):
+			continue
+		var home: Array = homes[i]
+		_move_to(card, home[0])
+		card.position = home[1]
+		card.scale = home[2]
+	animating = false
+
+
+## The cards out on the table: the middle card and the cards shown in both piles.
+func _table_cards() -> Array:
+	var found: Array = []
+	if center_card != null:
+		found.append(center_card)
+	for pile in [left_pile, right_pile]:
+		for child in pile.get_children():
+			if child.has_method("refresh") and not child.is_queued_for_deletion():
+				found.append(child)
+	return found
+
+
+## The middle of a deck's tray on screen, worked out from the tray's place in the picture (so it's right
+## even on the frame the trays are rebuilt).
+func _tray_center(number: int) -> Vector2:
+	var rect: Rect2 = TRAY_RECTS[DECK_ORDER.find(number)]
+	return deck_spots.global_position + deck_spots.size * rect.get_center()
+
+
+## Where to put a card so that, at this scale, its middle lands on center.
+func _corner_for_center(card: Control, center: Vector2, at_scale: float) -> Vector2:
+	return center - card.pivot_offset * (1.0 - at_scale) - card.custom_minimum_size * at_scale / 2.0
 
 
 ## The troops in a deck. A flight's deck is in element order; the flightless deck is fighters, then workers.
@@ -328,7 +409,7 @@ func _finish_flip(outgoing: Control, incoming: Control, to_pile: Control, step: 
 	animating = false
 
 
-## The middle card was pulled up: it fades where it was, and a small copy follows your finger.
+## The middle card was pulled up: it leaves the middle, and a small copy follows your finger.
 func start_drag(card: Control) -> void:
 	dragged_card = card
 	var holder := Control.new()  # the preview is drawn with its top-left at the finger, so offset it
@@ -336,7 +417,7 @@ func start_drag(card: Control) -> void:
 	ghost.scale = Vector2.ONE * 0.5
 	ghost.position = -ghost.custom_minimum_size * 0.25  # half of half size: centered on the finger
 	card.force_drag({"unit": card.unit}, holder)
-	card.modulate.a = 0.25
+	card.modulate.a = 0.0  # it is in your hand now; it comes back if the drop misses
 
 
 func _notification(what: int) -> void:
@@ -358,11 +439,38 @@ func card_dropped(number: int, unit: Node2D, spot_center: Vector2) -> void:
 	tween.tween_property(ghost, "scale", Vector2.ONE * 0.05, DROP_TIME)
 	tween.tween_property(ghost, "modulate:a", 0.0, DROP_TIME)
 	tween.chain().tween_callback(ghost.queue_free)
+	var had_next: bool = index < deck.size() - 1  # was there a card waiting in the right pile?
 	unit.set_flight(number, 1)
 	_rebuild()  # it left this deck
 	var spot := _spot_for(number)
 	if spot != null:
 		spot.pulse()
+	# The next card slides into the middle from its pile: the right pile, or the left one when the
+	# dropped card was the last in the deck.
+	if center_card != null:
+		var pile: Control = right_pile if had_next else left_pile
+		var count_before: int = (_ahead() if had_next else _behind()).size() + 1
+		_slide_in(center_card, pile, count_before)
+
+
+## Brings a new middle card in from the top of a pile: it starts there at pile size and slides to the
+## middle, growing. count is how many cards the pile held with this one still on it.
+func _slide_in(card: Control, pile: Control, count: int) -> void:
+	animating = true
+	_move_to(card, fly_layer)
+	card.scale = Vector2.ONE * PILE_SCALE
+	card.global_position = _position_for(card, pile.global_position + _pile_top(count), PILE_SCALE)
+	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(card, "global_position", stage.global_position + card.rest_position, SLIDE_IN_TIME)
+	tween.tween_property(card, "scale", Vector2.ONE, SLIDE_IN_TIME)
+	tween.chain().tween_callback(_finish_slide_in.bind(card))
+
+
+func _finish_slide_in(card: Control) -> void:
+	if is_instance_valid(card) and card.get_parent() == fly_layer:
+		_move_to(card, stage)
+		card.position = card.rest_position
+	animating = false
 
 
 ## The game keeps running while the roster is open, so the top bar says when the next raid comes.
