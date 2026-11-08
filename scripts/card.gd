@@ -28,6 +28,7 @@ var unit: Node2D
 var large := false
 var rest_position := Vector2.ZERO  # where the middle card sits when nothing is moving it
 var mini := false  # a tiny card lying in a tray: no text, only the frame, portrait and rank
+var compact := false  # a large card shown like a pile card, while it flies between the middle and a pile
 var tier_override := -1  # debug: show this rank instead of the troop's own (-1 for its own)
 
 var pressing := false
@@ -65,6 +66,16 @@ func _ready() -> void:
 	refresh()
 
 
+## Shows a large card like a pile card (short history, no arrows) or as itself again. Used while it
+## flies, so a card landing on a pile already looks like the pile card that replaces it.
+func set_compact(on: bool) -> void:
+	compact = on
+	var arrows: bool = large and not compact and unit.flight > 0
+	prev_button.visible = arrows
+	next_button.visible = arrows
+	refresh()
+
+
 func refresh() -> void:
 	if not is_instance_valid(unit):
 		name_label.text = "(gone)"
@@ -97,11 +108,11 @@ func _history_text() -> String:
 	var h: Dictionary = unit.history
 	# Cinzel is all capitals and wide, so lines are kept short enough for the parchment.
 	if unit.can_dig:
-		if large:
+		if large and not compact:
 			return "Dug %d · Built %d · Hauled %d\nRescues %d" % [h["cells_dug"], h["builds"], h["hauls"],
 				h["rescues"]]
 		return "Dug %d · Built %d · Hauled %d" % [h["cells_dug"], h["builds"], h["hauls"]]
-	if large:
+	if large and not compact:
 		return "Raids survived %d · Downed %d\nInjured %d · Recovered %d" % [h["raids_survived"],
 			h["raiders_downed"], h["times_injured"], h["injuries_survived"]]
 	return "Raids %d · Downed %d · Injured %d" % [h["raids_survived"], h["raiders_downed"], h["times_injured"]]

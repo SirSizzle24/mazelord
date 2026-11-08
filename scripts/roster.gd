@@ -51,10 +51,10 @@ const REFRESH_TIME := 0.5  # seconds between updates of the cards' text while op
 const PILE_SCALE := 0.62  # pile cards are the middle card shrunk
 const PILE_OFFSET := 8.0  # pixels each card down a pile is shifted, down and right
 const PILE_DEPTH := 3  # how many cards each pile shows stacked; the rest are counted
-const FLY_TIME := 0.22  # seconds for a card to slide between the middle and a pile
+const FLY_TIME := 0.40  # seconds for a card to slide between the middle and a pile
 const DROP_TIME := 0.25  # seconds for a dropped card to shrink into its deck spot
 const SLIDE_IN_TIME := 0.4  # seconds for the next card to slide in after one is moved to another deck
-const SWAP_TIME := 0.22  # seconds for each half of switching decks (put the old one down, bring the new up)
+const SWAP_TIME := 0.4  # seconds for each half of switching decks (put the old one down, bring the new up)
 const TRAY_SCALE := 0.25  # a card's size in its tray, against a full card
 const FLICKER := 0.35  # how much the candlelight wavers
 const FLICKER_SPEED := 2.5  # how fast it wavers
@@ -134,7 +134,7 @@ func open_deck(number: int) -> void:
 	var put_down := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	for card in outgoing:
 		_move_to(card, fly_layer)
-		put_down.tween_property(card, "global_position", _corner_for_center(card, tray, TRAY_SCALE), SWAP_TIME)
+		put_down.tween_property(card, "position", _fly(_corner_for_center(card, tray, TRAY_SCALE)), SWAP_TIME)
 		put_down.tween_property(card, "scale", Vector2.ONE * TRAY_SCALE, SWAP_TIME)
 		put_down.tween_property(card, "rotation", 0.0, SWAP_TIME)
 		put_down.tween_property(card, "modulate:a", 0.0, SWAP_TIME).set_ease(Tween.EASE_IN_OUT)
@@ -161,11 +161,11 @@ func _bring_forward(number: int, outgoing: Array) -> void:
 		homes.append([card.get_parent(), card.position, card.scale])
 		var final_scale: Vector2 = card.scale
 		_move_to(card, fly_layer)
-		var final_at: Vector2 = card.global_position
+		var final_at: Vector2 = card.position
 		card.scale = Vector2.ONE * TRAY_SCALE
-		card.global_position = _corner_for_center(card, tray, TRAY_SCALE)
+		card.position = _fly(_corner_for_center(card, tray, TRAY_SCALE))
 		card.modulate.a = 0.0
-		bring.tween_property(card, "global_position", final_at, SWAP_TIME)
+		bring.tween_property(card, "position", final_at, SWAP_TIME)
 		bring.tween_property(card, "scale", final_scale, SWAP_TIME)
 		bring.tween_property(card, "modulate:a", 1.0, SWAP_TIME * 0.5)
 	bring.chain().tween_callback(_finish_bring_forward.bind(incoming, homes))
@@ -354,12 +354,22 @@ func _fill_pile(pile: Control, cards: Array) -> void:
 		pile.add_child(more)
 
 
+## A point on screen, in the fly layer's own coordinates: cards in flight are moved by position, not
+## global_position, because a scaled card's global_position reads back its scaled corner but is set as
+## its unscaled one, so tweening it made scaled cards jump.
+func _fly(point: Vector2) -> Vector2:
+	return point - fly_layer.global_position
+
+
 ## Moves a card to another parent without it jumping on screen.
 func _move_to(card: Control, parent: Node) -> void:
-	var at := card.global_position
+	var at := card.get_global_transform().origin  # where the card's corner really is, scale included
 	card.get_parent().remove_child(card)
 	parent.add_child(card)
-	card.global_position = at
+	# A Control's position is its corner before its scale and turn are applied around its pivot, so
+	# work back from where the corner should be.
+	var local: Vector2 = card.get_parent().get_global_transform().affine_inverse() * at
+	card.position = local - card.pivot_offset + Transform2D(card.rotation, card.scale, 0.0, Vector2.ZERO) * card.pivot_offset
 
 
 ## Flips through the deck: 1 for the next card, -1 for the previous one. The middle card slides onto
@@ -383,28 +393,56 @@ func flip(step: int) -> void:
 	var incoming := new_card(deck[index], true, fly_layer)
 	incoming.rest_position = _rest_position(incoming)
 	incoming.scale = Vector2.ONE * PILE_SCALE
-	incoming.global_position = _position_for(incoming, from_pile.global_position + _pile_top(from_count),
-		PILE_SCALE)
-	_fill_pile(from_pile, _ahead() if step > 0 else _behind())  # its top card has risen out of it
+	incoming.position = _fly(_position_for(incoming, from_pile.global_position + _pile_top(from_count),
+		PILE_SCALE))
+	incoming.set_compact(true)  # it looks like the pile card it rose from until it lands
 	_move_to(outgoing, fly_layer)
+	outgoing.set_compact(true)  # and this one like the pile card it becomes
+	incoming.move_to_front()  # the card coming to the middle passes in front of the one leaving
 
 	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(outgoing, "global_position",
-		_position_for(outgoing, to_pile.global_position + _pile_top(to_count), PILE_SCALE), FLY_TIME)
+	# Both piles settle smoothly: the one the card rose from closes up, the other makes room on top.
+	_shift_pile(tween, from_pile, from_count - 1, -1)
+	_shift_pile(tween, to_pile, to_count, 1)
+	tween.tween_property(outgoing, "position",
+		_fly(_position_for(outgoing, to_pile.global_position + _pile_top(to_count), PILE_SCALE)), FLY_TIME)
 	tween.tween_property(outgoing, "scale", Vector2.ONE * PILE_SCALE, FLY_TIME)
 	tween.tween_property(outgoing, "rotation", 0.0, FLY_TIME)
-	tween.tween_property(incoming, "global_position",
-		stage.global_position + incoming.rest_position, FLY_TIME)
+	tween.tween_property(incoming, "position", _fly(stage.global_position + incoming.rest_position), FLY_TIME)
 	tween.tween_property(incoming, "scale", Vector2.ONE, FLY_TIME)
 	tween.chain().tween_callback(_finish_flip.bind(outgoing, incoming, to_pile, step))
+
+
+## Slides a pile's shown cards to where they'll sit once the pile holds new_count cards. moved is how
+## far down each card goes: 1 when a card lands on top, -1 when the top card has risen off (that card is
+## hidden at once, since the rising card replaces it). A card pushed past the shown depth fades out.
+func _shift_pile(tween: Tween, pile: Control, new_count: int, moved: int) -> void:
+	var shown_cards := pile.get_children().filter(func(child): return child.has_method("refresh"))
+	var shown: int = shown_cards.size()
+	for k in shown:
+		var card: Control = shown_cards[k]
+		var depth: int = shown - 1 - k  # 0 is the top card (added last)
+		var new_depth: int = depth + moved
+		if new_depth < 0:
+			card.visible = false
+			continue
+		tween.tween_property(card, "position", _pile_top(new_count) + Vector2.ONE * PILE_OFFSET * new_depth,
+			FLY_TIME)
+		if new_depth >= PILE_DEPTH:
+			tween.tween_property(card, "modulate:a", 0.0, FLY_TIME)
 
 
 ## The slide is over: the old middle card joins its pile and the new one settles on the stage.
 func _finish_flip(outgoing: Control, incoming: Control, to_pile: Control, step: int) -> void:
 	outgoing.queue_free()
+	# Both piles are rebuilt where their cards now sit, so nothing moves; a card newly uncovered at
+	# the bottom of the pile the middle card came from appears there.
+	var from_pile: Control = right_pile if step > 0 else left_pile
 	_fill_pile(to_pile, _behind() if step > 0 else _ahead())
+	_fill_pile(from_pile, _ahead() if step > 0 else _behind())
 	_move_to(incoming, stage)
 	incoming.position = incoming.rest_position
+	incoming.set_compact(false)  # landed: back to the full card
 	center_card = incoming
 	animating = false
 
@@ -433,9 +471,9 @@ func _notification(what: int) -> void:
 func card_dropped(number: int, unit: Node2D, spot_center: Vector2) -> void:
 	var ghost := new_card(unit, false, fly_layer)
 	ghost.scale = Vector2.ONE * 0.5
-	ghost.global_position = get_global_mouse_position() - ghost.custom_minimum_size * 0.25
+	ghost.position = _fly(get_global_mouse_position() - ghost.custom_minimum_size * 0.25)
 	var tween := create_tween().set_parallel()
-	tween.tween_property(ghost, "global_position", spot_center, DROP_TIME)
+	tween.tween_property(ghost, "position", _fly(spot_center), DROP_TIME)
 	tween.tween_property(ghost, "scale", Vector2.ONE * 0.05, DROP_TIME)
 	tween.tween_property(ghost, "modulate:a", 0.0, DROP_TIME)
 	tween.chain().tween_callback(ghost.queue_free)
@@ -459,9 +497,9 @@ func _slide_in(card: Control, pile: Control, count: int) -> void:
 	animating = true
 	_move_to(card, fly_layer)
 	card.scale = Vector2.ONE * PILE_SCALE
-	card.global_position = _position_for(card, pile.global_position + _pile_top(count), PILE_SCALE)
+	card.position = _fly(_position_for(card, pile.global_position + _pile_top(count), PILE_SCALE))
 	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(card, "global_position", stage.global_position + card.rest_position, SLIDE_IN_TIME)
+	tween.tween_property(card, "position", _fly(stage.global_position + card.rest_position), SLIDE_IN_TIME)
 	tween.tween_property(card, "scale", Vector2.ONE, SLIDE_IN_TIME)
 	tween.chain().tween_callback(_finish_slide_in.bind(card))
 
