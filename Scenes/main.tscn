@@ -19,6 +19,9 @@
 
 [node name="Main" type="Node2D" unique_id=1161609498]
 
+[node name="Dim" type="CanvasModulate" parent="."]
+color = Color(0.8, 0.78, 0.78, 1)
+
 [node name="Grid" type="Node2D" parent="." unique_id=1823644226]
 script = ExtResource("1_jjgbg")
 
