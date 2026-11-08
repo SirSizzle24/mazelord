@@ -161,6 +161,8 @@ func _rebuild_spots() -> void:
 		spot.roster = self
 		spot.number = n
 		spot.mask = TRAY_MASKS[i]
+		# Where the tray sits across the table, from the middle of the picture (where the camera was).
+		spot.side = clampf((TRAY_RECTS[i].get_center().x - 0.5) / 0.27, -1.0, 1.0)
 		var slab: Array = TRAY_SLABS[i]
 		spot.slab_corners = PackedVector2Array([Vector2(slab[0], slab[1]), Vector2(slab[2], slab[3]),
 			Vector2(slab[4], slab[5]), Vector2(slab[6], slab[7])])

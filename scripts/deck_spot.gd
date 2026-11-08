@@ -15,10 +15,14 @@ const PerspectiveShader := preload("res://scripts/perspective.gdshader")
 const HOVER_SCALE := 1.06
 const GLOW_ALPHA := 0.35  # how strongly a tray glows while a card is in the air
 const HOVER_GLOW_ALPHA := 0.7  # and the one under your finger
-const STACK_DEPTH := 3  # cards shown lying in the tray
-const STACK_OFFSET := 5.0  # pixels (in the flat stack) each card under the top one shows
 const CARD_SCALE := 0.5  # the flat stack's cards, against a full card: about twice their size on screen
 const STACK_HEIGHT := 0.84  # how much of the slab's length the stack covers, so stone shows around it
+const CARD_THICKNESS := 1.2  # pixels (in the flat deck) each card adds to the deck's thickness
+const MIN_THICKNESS := 3.0
+const MAX_THICKNESS := 16.0
+const SIDE_VIEW := 1.6  # how much side shows on the outermost trays, against the near edge
+const EDGE_COLOR := Color(0.12, 0.10, 0.09)
+const EDGE_LINE := Color(0.42, 0.36, 0.28, 0.5)
 
 var roster: Node  # set before the spot enters the scene
 var number := 0  # 1 to 5 for a flight, 0 for flightless
@@ -26,6 +30,7 @@ var caption := ""  # the deck's name and count, on the crossbar
 var open := false  # the deck out on the table: the tray is bare
 var mask: Texture2D  # the tray's shape, for the glow
 var cards: Array = []  # the deck's troops, first on top
+var side := 0.0  # where the tray sits across the table: -1 far left, 0 middle, 1 far right
 ## The slab's corners in the painting, as fractions of this spot's size: top-left, top-right,
 ## bottom-right, bottom-left.
 var slab_corners := PackedVector2Array([Vector2(0.15, 0.26), Vector2(0.85, 0.26), Vector2(0.88, 0.86),
@@ -49,35 +54,41 @@ func _ready() -> void:
 	_layout()
 
 
-## The stack, built flat in an offscreen viewport: a soft shadow, then the cards. The bottom card stays
-## put and each card above sits a little higher, straight up the slab: seen from the near side of the
-## table, a taller stack reaches further up the screen. Cards lower in the stack are in the top card's
-## shadow.
+## The deck, built flat in an offscreen viewport: a soft shadow, the deck's edges, then its top card.
+## The deck has thickness (more cards, thicker), so the top card sits above the bottom one: shifted up
+## the slab, because the camera looks from the near side of the table, and sideways, away from the
+## middle of the table, because the camera sits over the middle. That uncovers the edges you'd really
+## see: the near edge always, and the side facing the middle (the right side on the left trays, the
+## left side on the right trays, almost none in the middle).
 func _build_stack() -> void:
 	var viewport := SubViewport.new()
 	viewport.transparent_bg = true
 	viewport.disable_3d = true
 	viewport.gui_disable_input = true
 	add_child(viewport)
-	var shown: int = min(STACK_DEPTH, cards.size())
-	var card_size: Vector2 = Vector2.ZERO
-	var spread := Vector2(0.0, STACK_OFFSET * (STACK_DEPTH - 1))
+	var thickness: float = clampf(cards.size() * CARD_THICKNESS, MIN_THICKNESS, MAX_THICKNESS)
+	var lift := Vector2(side * thickness * SIDE_VIEW, -thickness)  # top card, from the bottom card
+	var probe: Control = roster.new_card(cards[0], false, viewport, true)  # the top card, added last below
+	var card_size: Vector2 = probe.custom_minimum_size * CARD_SCALE
+	viewport.remove_child(probe)
+	# The bottom card's corner, so everything fits in the viewport with the top card shifted.
+	var base := Vector2(maxf(0.0, -lift.x), -lift.y)
 	var shadow := Panel.new()
 	var look := StyleBoxFlat.new()
 	look.bg_color = Color(0.0, 0.0, 0.0, 0.5)
 	look.set_corner_radius_all(6)
 	shadow.add_theme_stylebox_override("panel", look)
-	viewport.add_child(shadow)
-	for i in range(shown - 1, -1, -1):  # i = 0 is the top card; the bottom one is added first
-		var card: Control = roster.new_card(cards[i], false, viewport, true)
-		card_size = card.custom_minimum_size * CARD_SCALE
-		card.scale = Vector2.ONE * CARD_SCALE
-		var from_bottom: int = shown - 1 - i
-		card.position = spread - Vector2(0.0, STACK_OFFSET * from_bottom)
-		card.modulate = Color.WHITE if i == 0 else Color(0.6, 0.6, 0.6)
-	shadow.position = spread + Vector2(0, 4)
+	shadow.position = base + Vector2(0, 4)
 	shadow.size = card_size
-	flat_size = card_size + spread + Vector2(0, 4)
+	viewport.add_child(shadow)
+	var edges := Control.new()  # draws the deck's near edge and its side
+	edges.size = card_size + Vector2(absf(lift.x), -lift.y) + Vector2(0, 8)
+	edges.draw.connect(_draw_edges.bind(edges, base, card_size, lift, cards.size()))
+	viewport.add_child(edges)
+	probe.scale = Vector2.ONE * CARD_SCALE
+	probe.position = base + lift
+	viewport.add_child(probe)
+	flat_size = card_size + Vector2(absf(lift.x), -lift.y) + Vector2(0, 4)
 	viewport.size = Vector2i(ceili(flat_size.x), ceili(flat_size.y))
 	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE  # it never moves; draw it once
 
@@ -90,6 +101,26 @@ func _build_stack() -> void:
 	warp.material = material
 	add_child(warp)
 	move_child(warp, caption_label.get_index())  # over the glow, under the caption
+
+
+## The deck's visible edges: each is the strip between the bottom card's edge and the top card's,
+## dark like the frames' stone, with faint lines where the cards meet.
+func _draw_edges(edges: Control, base: Vector2, card: Vector2, lift: Vector2, count: int) -> void:
+	var bottom_left := base + Vector2(0, card.y)
+	var bottom_right := base + card
+	var near := PackedVector2Array([bottom_left, bottom_right, bottom_right + lift, bottom_left + lift])
+	edges.draw_colored_polygon(near, EDGE_COLOR)
+	if absf(lift.x) > 0.5:
+		# The side facing the middle of the table: the right side when the top card shifted left.
+		var x := base.x + (card.x if lift.x < 0.0 else 0.0)
+		var low := Vector2(x, base.y + card.y)
+		var high := Vector2(x, base.y)
+		edges.draw_colored_polygon(PackedVector2Array([high, low, low + lift, high + lift]),
+			EDGE_COLOR.darkened(0.4))
+	var lines: int = min(count, 12) - 1
+	for n in lines:
+		var t := float(n + 1) / float(lines + 1)
+		edges.draw_line(bottom_left + lift * t, bottom_right + lift * t, EDGE_LINE, 1.0)
 
 
 ## Works out where the flat stack lands: a card-shaped area centered on the slab, in the slab's
