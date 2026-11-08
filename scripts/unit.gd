@@ -1,5 +1,7 @@
 extends "res://scripts/fighter.gd"
-## A troop: a colored circle that walks freely along a navigation path.
+## A troop: walks freely along a navigation path. Troop types with baked art (troop_type "sprites")
+## show it through a TroopSprite child, recolored with the look rolled when summoned; the rest are
+## still colored circles.
 ## Combat (health, attacking raiders in range, being downed) comes from fighter.gd.
 ## Downed troops are injured: they die if the death timer runs out, unless they're on mycelium,
 ## where they heal. Workers carry injured troops to mycelium (rescues come before other work).
@@ -12,6 +14,21 @@ const DEATH_TIME := 60.0  # seconds an injured troop survives off mycelium
 const HEAL_TIME := 20.0  # seconds on mycelium for an injured troop to get back up
 const RECOVERED_HEALTH := 0.5  # share of full health it gets back up with
 const MYCELIUM_REGEN := 2.0  # health per second a hurt (but standing) fungus regains on mycelium
+## Which baked clip plays for what. Clips are found by name in the face's folder.
+const TroopSprite := preload("res://scripts/troop_sprite.gd")
+const TroopLook := preload("res://scripts/troop_look.gd")
+const IDLE_CLIP := "Idle"
+const MOVE_CLIP := "Run"  # SPEED is a quick trot for a troop this size; try "Walk" to compare
+const RUSH_CLIP := "Run"  # carrying a patient
+const DIG_CLIP := "Attack_L"
+const BUILD_CLIP := "Attack_R"
+const FIGHT_CLIPS := ["Attack_L", "Attack_R"]  # one at random per hit
+const WORK_RATE := 1.6  # digging and building play faster than a fighting swing
+const SHADOW_RADIUS := 22.0  # the soft shadow under a sprite's feet, before it's squashed flat
+const SHADOW_SQUASH := 0.5  # shadow height against its width: flatter reads as lying on the floor
+const SHADOW_ALPHA := 0.45  # darkness at its middle
+const SPRITE_HEAD := 52.0  # pixels from the feet to the top of the cap, for things drawn above it
+const DEATH_FADE := 1.5  # seconds a dying troop takes to fade where it lies
 # Fame earned, per deed. Placeholders to tune.
 const FAME_PER_JOB := 1.0  # building and hauling
 const FAME_PER_DUG_CELL := 0.12  # about 1 per block dug
@@ -28,6 +45,11 @@ var dungeon: Node  # set by the dungeon; receives hauled items
 
 var type_id := ""  # which troop type this is, e.g. "worker"
 var color := Color(0.6, 0.6, 0.6)
+var sprite_folder := ""  # the type's baked art (one folder per face), or "" for a circle
+var look: Dictionary = {}  # cap, body and spot colors and face (troop_look.gd); set when summoned
+var sprite: TroopSprite = null  # the TroopSprite, when this type has art
+var action := ""  # a clip that plays through before anything else ("Enter_1", "Hit"...), or ""
+var dying := false  # playing its death; already gone from the roster and the count
 var can_dig := false  # workers only: digging and building
 var radius := 20.0  # set from the troop type; everyone but workers is bigger
 var size := "small"  # size class (see grid.SIZES): which tunnels it fits through
@@ -66,6 +88,7 @@ func setup(new_type_id: String, troop_type: Dictionary) -> void:
 	can_dig = troop_type["can_dig"]
 	radius = troop_type["radius"]
 	size = troop_type["size"]
+	sprite_folder = troop_type.get("sprites", "")
 	set_stats(troop_type)
 
 
@@ -74,6 +97,58 @@ func _ready() -> void:
 	enemy_group = "hostiles"  # raiders, rival guards and rival workers
 	grid.dig(start_tile)  # make sure it starts on floor
 	position = grid.tile_to_screen(start_tile)
+	if sprite_folder != "" and not look.is_empty():
+		sprite = TroopSprite.new()
+		sprite.setup(sprite_folder.path_join(look["face"]), look)
+		add_child(sprite)
+		sprite.finished.connect(_on_clip_finished)
+		_play_action("Enter_1")  # rises out of the ground
+
+
+## Plays a clip through once; the usual clips wait until it ends.
+func _play_action(clip: String, reverse := false, rate := 1.0) -> void:
+	if sprite == null:
+		return
+	action = clip
+	sprite.play(clip, false, reverse, rate)
+
+
+func _on_clip_finished(clip: String) -> void:
+	if clip != action:
+		return
+	if clip == "Fall" and downed:
+		return  # stays lying down until it recovers
+	else:
+		action = ""
+
+
+## Picks the looping clip for what the troop is doing, and which way it faces.
+func _animate() -> void:
+	if action != "" or downed:
+		return
+	var clip := IDLE_CLIP
+	var rate := 1.0
+	if not path.is_empty():
+		clip = RUSH_CLIP if carrying_patient() else MOVE_CLIP
+		sprite.face(path[0] - position)
+	elif not job.is_empty() and job["kind"] in ["dig", "build"]:
+		clip = DIG_CLIP if job["kind"] == "dig" else BUILD_CLIP
+		rate = WORK_RATE
+		sprite.face(grid.tile_to_screen(job["tile"]) - position)
+	elif target != null and is_instance_valid(target):
+		sprite.face(target.position - position)
+	sprite.play(clip, true, false, rate)
+
+
+func carrying_patient() -> bool:
+	return not job.is_empty() and job["kind"] == "rescue" and job["carrying"]
+
+
+func take_damage(amount: float) -> bool:
+	var downed_it := super(amount)
+	if sprite != null and not downed and (action == "" or action in FIGHT_CLIPS):
+		_play_action("Hit")
+	return downed_it
 
 
 ## Adds fame. Crossing the threshold asks the player to name this troop.
@@ -113,6 +188,14 @@ func _bash_rival_door(delta: float) -> void:
 
 func _on_hit_landed(damage_dealt: float, downed_it: bool) -> void:
 	add_fame(damage_dealt * FAME_PER_DAMAGE)
+	if sprite != null and action == "" and target != null:
+		sprite.face(target.position - position)
+		# Fit the swing into the time between hits.
+		var clip: String = FIGHT_CLIPS.pick_random()
+		var swing := TroopLook.sheet(sprite.folder, clip)
+		if not swing.is_empty():
+			var seconds: float = float(swing["info"]["frames"]) / float(swing["info"]["fps"])
+			_play_action(clip, false, max(1.0, seconds / (attack_interval * 0.9)))
 	if downed_it:
 		add_fame(FAME_PER_DOWNED_RAIDER)
 		record("raiders_downed")
@@ -124,17 +207,25 @@ func get_tile() -> Vector2i:
 
 
 func _draw() -> void:
-	draw_circle(Vector2.ZERO, radius, color.darkened(0.5) if downed else color)
+	if dying:
+		return
+	var top := radius  # how far above its position things floating over the troop go
+	if sprite == null:
+		draw_circle(Vector2.ZERO, radius, color.darkened(0.5) if downed else color)
+	else:
+		top = SPRITE_HEAD
+		_draw_shadow()
 	if selected:
 		draw_arc(Vector2.ZERO, radius + 4.0, 0.0, TAU, 32, Color.YELLOW, 2.0)
 	if flight > 0:
 		# Flight and element above the troop, e.g. "2-1".
-		draw_string(ThemeDB.fallback_font, Vector2(-30, -radius - 6.0), "%d-%d" % [flight, element],
+		draw_string(ThemeDB.fallback_font, Vector2(-30, -top - 6.0), "%d-%d" % [flight, element],
 			HORIZONTAL_ALIGNMENT_CENTER, 60, 16, Color.WHITE)
 	if is_named:
 		draw_string(ThemeDB.fallback_font, Vector2(-60, radius + 26.0), troop_name,
 			HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color(1.0, 0.9, 0.5))
-	_draw_combat(radius)
+	if not (downed and sprite != null):  # a lying sprite shows it's down; no X needed
+		_draw_combat(radius)
 	if downed:
 		if grid.has_mycelium(get_tile()):
 			# Healing: a green ring fills up.
@@ -144,11 +235,22 @@ func _draw() -> void:
 			draw_arc(Vector2.ZERO, radius + 6.0, -PI / 2.0, -PI / 2.0 + TAU * death_time_left / DEATH_TIME, 32, Color(0.95, 0.25, 0.25), 3.0)
 	if not job.is_empty() and job["kind"] == "haul" and job["carrying"]:
 		# A carried item rides above the troop.
-		draw_circle(Vector2(0, -radius - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
+		draw_circle(Vector2(0, -top - 8.0), 7.0, grid.ITEM_COLORS[job["item"]["kind"]])
 	var fraction := _job_fraction()
 	if fraction > 0.0 and path.is_empty():
 		# An orange ring fills up while working.
 		draw_arc(Vector2.ZERO, radius + 8.0, -PI / 2.0, -PI / 2.0 + TAU * fraction, 32, Color.ORANGE, 3.0)
+
+
+## A soft dark oval under the feet, so the sprite stands on the floor instead of floating over it:
+## stacked circles, each smaller one adding a little more dark, squashed flat.
+func _draw_shadow() -> void:
+	const RINGS := 6
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, SHADOW_SQUASH))
+	for i in RINGS:
+		var r := SHADOW_RADIUS * (1.0 - float(i) / RINGS)
+		draw_circle(Vector2.ZERO, r, Color(0, 0, 0, SHADOW_ALPHA / RINGS))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## How far along the current job is, from 0 to 1. Hauling shows no ring.
@@ -394,7 +496,7 @@ func _rescue_step() -> void:
 func _job_still_exists() -> bool:
 	if job["kind"] == "rescue":
 		var patient: Node2D = job["patient"]
-		return is_instance_valid(patient) and patient.downed
+		return is_instance_valid(patient) and patient.downed and not patient.dying
 	return grid.job_still_exists(job)
 
 
@@ -430,6 +532,7 @@ func _on_downed() -> void:
 	death_time_left = DEATH_TIME
 	heal_time = 0.0
 	dungeon.on_troop_injured()
+	_play_action("Fall")
 
 
 ## Injured, each frame: carried along, healing on mycelium, or running out of time.
@@ -459,6 +562,7 @@ func _recover() -> void:
 	add_fame(FAME_FOR_SURVIVING)
 	record("injuries_survived")
 	queue_redraw()
+	_play_action("Fall", true)  # gets back up: the fall, backwards
 	if can_dig:
 		dispatcher.request()
 
@@ -466,10 +570,24 @@ func _recover() -> void:
 func _die() -> void:
 	dungeon.on_troop_died(type_id, is_named)  # named troops hurt more to lose
 	remove_from_group("units")  # leaves the troop count, the roster and the dispatcher right away
-	queue_free()
+	if sprite == null:
+		queue_free()
+		return
+	# It dies lying down, so rather than the Death clip (which starts standing), it fades where it lies.
+	dying = true
+	queue_redraw()
+	create_tween().tween_property(self, "modulate:a", 0.0, DEATH_FADE).finished.connect(queue_free)
 
 
 func _process(delta: float) -> void:
+	if dying:
+		return
+	_step(delta)
+	if sprite != null and not dying:
+		_animate()
+
+
+func _step(delta: float) -> void:
 	if downed:
 		_process_injured(delta)
 		return
