@@ -25,6 +25,11 @@ const DIG_CLIP := "Attack_L"
 const BUILD_CLIP := "Attack_R"
 const FIGHT_CLIPS := ["Attack_L", "Attack_R"]  # one at random per hit
 const WORK_RATE := 1.0  # digging and building play at the clips' own speed (DIG_TIME is set to match)
+## Troops don't walk through each other: any two closer than this share of their radii added together
+## push apart, gently, so a crowd spreads out instead of stacking. A troop working in place (digging,
+## building) holds its ground and only pushes; downed and carried troops are walked over.
+const PERSONAL_SPACE := 0.8
+const PUSH_SPEED := 140.0  # pixels per second at full overlap
 const SHADOW_RADIUS := 22.0  # the soft shadow under a sprite's feet, before it's squashed flat
 const SHADOW_SQUASH := 0.5  # shadow height against its width: flatter reads as lying on the floor
 const SHADOW_ALPHA := 0.45  # darkness at its middle
@@ -245,6 +250,32 @@ func _draw() -> void:
 	if fraction > 0.0 and path.is_empty():
 		# An orange ring fills up while working.
 		draw_arc(Vector2.ZERO, radius + 8.0, -PI / 2.0, -PI / 2.0 + TAU * fraction, 32, Color.ORANGE, 3.0)
+
+
+## Steps away from any troop it's standing in. Only onto floor, so nobody is shoved into rock.
+func _separate(delta: float) -> void:
+	if downed or carried_by != null:
+		return
+	if path.is_empty() and not job.is_empty() and job["kind"] in ["dig", "build"]:
+		return  # working in place: holds its ground
+	var push := Vector2.ZERO
+	for other in get_tree().get_nodes_in_group("units"):
+		if other == self or other.downed or other.dying:
+			continue
+		var gap: Vector2 = position - other.position
+		var reach: float = (radius + other.radius) * PERSONAL_SPACE
+		var distance := gap.length()
+		if distance >= reach:
+			continue
+		if distance < 0.01:  # exactly on top of each other: pick a side
+			gap = Vector2.RIGHT.rotated(randf() * TAU)
+			distance = 1.0
+		push += gap / distance * (reach - distance) / reach
+	if push == Vector2.ZERO:
+		return
+	var moved := position + push.limit_length(1.0) * PUSH_SPEED * delta
+	if grid.is_floor(grid.screen_to_tile(moved)):
+		position = moved
 
 
 ## A soft dark oval under the feet, so the sprite stands on the floor instead of floating over it:
@@ -588,6 +619,8 @@ func _process(delta: float) -> void:
 	if dying:
 		return
 	_step(delta)
+	if not dying:
+		_separate(delta)
 	if sprite != null and not dying:
 		_animate()
 
